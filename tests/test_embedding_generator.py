@@ -102,4 +102,34 @@ class TestEmbeddingGenerator:
         assert "EmbeddingGenerator" in repr_str
         assert "FRIDA" in repr_str
         assert "cpu" in repr_str
+    
+    def test_prefix_parameter(self, generator):
+        """Test that prefix parameter works correctly."""
+        text = "кофейные зерна"
+        
+        # Generate embeddings with different prefixes
+        emb_no_prefix = generator.generate(text)
+        emb_query = generator.generate(text, prefix="search_query: ")
+        emb_doc = generator.generate(text, prefix="search_document: ")
+        
+        # All should have the same dimension
+        assert len(emb_no_prefix) == len(emb_query) == len(emb_doc)
+        
+        # Embeddings with different prefixes should be different
+        # (FRIDA model is sensitive to prefixes)
+        assert not np.allclose(emb_no_prefix, emb_query)
+        assert not np.allclose(emb_query, emb_doc)
+    
+    def test_prefix_with_batch(self, generator):
+        """Test that prefix works with batch processing."""
+        texts = ["кофе", "чай", "сахар"]
+        
+        emb_no_prefix = generator.generate(texts)
+        emb_with_prefix = generator.generate(texts, prefix="search_document: ")
+        
+        # Should have the same shape
+        assert emb_no_prefix.shape == emb_with_prefix.shape
+        
+        # But different values
+        assert not np.allclose(emb_no_prefix, emb_with_prefix)
 

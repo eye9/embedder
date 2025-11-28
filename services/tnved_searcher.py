@@ -126,9 +126,12 @@ class TNVEDSearcher:
             
             logger.debug(f"Normalized query: '{normalized_query}'")
             
-            # Step 2: Generate embedding for normalized query
+            # Step 2: Generate embedding for normalized query with search_query prefix
             logger.debug("Generating query embedding")
-            query_embedding = self.embedder.generate(normalized_query)
+            query_embedding = self.embedder.generate(
+                normalized_query,
+                prefix="search_query: "
+            )
             
             # Ensure embedding is 1D array and convert to list
             if query_embedding.ndim > 1:

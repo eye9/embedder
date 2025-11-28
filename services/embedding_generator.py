@@ -68,7 +68,12 @@ class EmbeddingGenerator:
             logger.error(f"Failed to load model {model_name}: {e}")
             raise
     
-    def generate(self, texts: Union[str, List[str]], batch_size: int = 32) -> np.ndarray:
+    def generate(
+        self,
+        texts: Union[str, List[str]],
+        batch_size: int = 32,
+        prefix: str = ""
+    ) -> np.ndarray:
         """
         Generate embeddings for one or more texts.
         
@@ -76,9 +81,17 @@ class EmbeddingGenerator:
         consistent vector representations. The same input text will always
         produce the same embedding (deterministic).
         
+        FRIDA model works best with task-specific prefixes:
+        - "search_query: " - for search queries
+        - "search_document: " - for documents to be retrieved
+        - "paraphrase: " - for paraphrasing tasks
+        - "categorize: " - for categorization tasks
+        
         Args:
             texts: Single text string or list of text strings to embed
             batch_size: Number of texts to process in each batch (default: 32)
+            prefix: Task-specific prefix to prepend to texts (default: "")
+                   Common values: "search_query: ", "search_document: "
             
         Returns:
             numpy array of embeddings with shape:
@@ -90,12 +103,14 @@ class EmbeddingGenerator:
             
         Examples:
             >>> generator = EmbeddingGenerator()
-            >>> embedding = generator.generate("кофейные зерна")
-            >>> embedding.shape
+            >>> # For search queries
+            >>> query_emb = generator.generate("кофейные зерна", prefix="search_query: ")
+            >>> query_emb.shape
             (312,)
-            >>> embeddings = generator.generate(["кофе", "чай", "сахар"])
-            >>> embeddings.shape
-            (3, 312)
+            >>> # For documents
+            >>> doc_emb = generator.generate("кофе арабика", prefix="search_document: ")
+            >>> doc_emb.shape
+            (312,)
         """
         # Handle single string input
         if isinstance(texts, str):
@@ -121,12 +136,20 @@ class EmbeddingGenerator:
         if not non_empty_texts:
             raise ValueError("All input texts are empty")
         
-        logger.debug(f"Generating embeddings for {len(non_empty_texts)} texts with batch_size={batch_size}")
+        logger.debug(
+            f"Generating embeddings for {len(non_empty_texts)} texts "
+            f"with batch_size={batch_size}, prefix='{prefix}'"
+        )
+        
+        # Apply prefix if provided
+        texts_to_encode = non_empty_texts
+        if prefix:
+            texts_to_encode = [f"{prefix}{text}" for text in non_empty_texts]
         
         # Generate embeddings using the model
         try:
             embeddings = self.model.encode(
-                non_empty_texts,
+                texts_to_encode,
                 batch_size=batch_size,
                 show_progress_bar=False,
                 convert_to_numpy=True,

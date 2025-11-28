@@ -233,10 +233,14 @@ class TNVEDLoader:
                 # Use empty string for failed normalization
                 normalized_texts.append("")
         
-        # Generate embeddings
+        # Generate embeddings with search_document prefix for FRIDA model
         logger.debug(f"Generating embeddings for {len(normalized_texts)} texts")
         try:
-            embeddings = self.embedder.generate(normalized_texts, batch_size=self.batch_size)
+            embeddings = self.embedder.generate(
+                normalized_texts,
+                batch_size=self.batch_size,
+                prefix="search_document: "
+            )
             
             # Ensure embeddings is 2D array
             if embeddings.ndim == 1:
