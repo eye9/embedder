@@ -6,7 +6,11 @@ for Russian text lemmatization, along with lowercase conversion and whitespace c
 """
 
 import re
+import warnings
 from typing import Optional
+
+# Suppress pymorphy2 pkg_resources deprecation warning
+warnings.filterwarnings('ignore', message='.*pkg_resources is deprecated.*')
 
 from natasha import (
     Segmenter,
