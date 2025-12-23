@@ -4,7 +4,8 @@ Tests for data models
 
 import pytest
 from models.tnved_record import TNVEDRecord
-from models.search_result import SearchResult
+from models.search_result import SearchResult, SourceType
+from models.product_record import ProductRecord
 
 
 class TestTNVEDRecord:
@@ -60,13 +61,33 @@ class TestSearchResult:
             code="0901110000",
             description="КОФЕ НЕЖАРЕНЫЙ НЕОСВОБОЖДЕННЫЙ ОТ КОФЕИНА",
             normalized_text="кофе нежареный неосвобожденный от кофеин",
-            similarity_score=0.89
+            similarity_score=0.89,
+            source_type=SourceType.REFERENCE.value
         )
         
         assert result.code == "0901110000"
         assert result.description == "КОФЕ НЕЖАРЕНЫЙ НЕОСВОБОЖДЕННЫЙ ОТ КОФЕИНА"
         assert result.normalized_text == "кофе нежареный неосвобожденный от кофеин"
         assert result.similarity_score == 0.89
+        assert result.source_type == "reference"
+        assert result.source_name is None
+        assert result.source_id is None
+    
+    def test_valid_result_with_source_info(self):
+        """Test creating a search result with source information"""
+        result = SearchResult(
+            code="0901110000",
+            description="Кофе арабика зерновой 1кг",
+            normalized_text="кофе арабика зерновой килограмм",
+            similarity_score=0.95,
+            source_type=SourceType.PRODUCT.value,
+            source_name="customs_2024_q1",
+            source_id="декларация_12345"
+        )
+        
+        assert result.source_type == "product"
+        assert result.source_name == "customs_2024_q1"
+        assert result.source_id == "декларация_12345"
     
     def test_empty_code_raises_error(self):
         """Test that empty code raises ValueError"""
@@ -75,7 +96,19 @@ class TestSearchResult:
                 code="",
                 description="Some description",
                 normalized_text="some description",
-                similarity_score=0.5
+                similarity_score=0.5,
+                source_type=SourceType.REFERENCE.value
+            )
+    
+    def test_invalid_source_type_raises_error(self):
+        """Test that invalid source_type raises ValueError"""
+        with pytest.raises(ValueError, match="Invalid source_type"):
+            SearchResult(
+                code="0901110000",
+                description="Test",
+                normalized_text="test",
+                similarity_score=0.5,
+                source_type="invalid_type"
             )
     
     def test_similarity_score_bounds(self):
@@ -85,21 +118,24 @@ class TestSearchResult:
             code="0901110000",
             description="Test",
             normalized_text="test",
-            similarity_score=0.0
+            similarity_score=0.0,
+            source_type=SourceType.REFERENCE.value
         )
         
         SearchResult(
             code="0901110000",
             description="Test",
             normalized_text="test",
-            similarity_score=1.0
+            similarity_score=1.0,
+            source_type=SourceType.REFERENCE.value
         )
         
         SearchResult(
             code="0901110000",
             description="Test",
             normalized_text="test",
-            similarity_score=0.5
+            similarity_score=0.5,
+            source_type=SourceType.REFERENCE.value
         )
     
     def test_similarity_score_below_zero_raises_error(self):
@@ -109,7 +145,8 @@ class TestSearchResult:
                 code="0901110000",
                 description="Test",
                 normalized_text="test",
-                similarity_score=-0.1
+                similarity_score=-0.1,
+                source_type=SourceType.REFERENCE.value
             )
     
     def test_similarity_score_above_one_raises_error(self):
@@ -119,5 +156,82 @@ class TestSearchResult:
                 code="0901110000",
                 description="Test",
                 normalized_text="test",
-                similarity_score=1.1
+                similarity_score=1.1,
+                source_type=SourceType.REFERENCE.value
             )
+
+
+class TestProductRecord:
+    """Tests for ProductRecord data model"""
+    
+    def test_valid_product_record_creation(self):
+        """Test creating a valid product record"""
+        record = ProductRecord(
+            code="0901110000",
+            description="Кофе арабика зерновой 1кг",
+            normalized_text="кофе арабика зерновой килограмм",
+            source_name="customs_2024_q1"
+        )
+        
+        assert record.code == "0901110000"
+        assert record.description == "Кофе арабика зерновой 1кг"
+        assert record.normalized_text == "кофе арабика зерновой килограмм"
+        assert record.source_name == "customs_2024_q1"
+        assert record.source_id is None
+    
+    def test_product_record_with_source_id(self):
+        """Test creating a product record with source ID"""
+        record = ProductRecord(
+            code="0901110000",
+            description="Кофе арабика зерновой 1кг",
+            normalized_text="кофе арабика зерновой килограмм",
+            source_name="customs_2024_q1",
+            source_id="декларация_12345"
+        )
+        
+        assert record.source_id == "декларация_12345"
+    
+    def test_empty_code_raises_error(self):
+        """Test that empty code raises ValueError"""
+        with pytest.raises(ValueError, match="ТНВЭД code cannot be empty"):
+            ProductRecord(
+                code="",
+                description="Some product",
+                normalized_text="some product",
+                source_name="test_source"
+            )
+    
+    def test_empty_description_raises_error(self):
+        """Test that empty description raises ValueError"""
+        with pytest.raises(ValueError, match="Product description cannot be empty"):
+            ProductRecord(
+                code="0901110000",
+                description="",
+                normalized_text="some product",
+                source_name="test_source"
+            )
+    
+    def test_empty_source_name_raises_error(self):
+        """Test that empty source_name raises ValueError"""
+        with pytest.raises(ValueError, match="Source name cannot be empty"):
+            ProductRecord(
+                code="0901110000",
+                description="Some product",
+                normalized_text="some product",
+                source_name=""
+            )
+
+
+class TestSourceType:
+    """Tests for SourceType enumeration"""
+    
+    def test_source_type_values(self):
+        """Test that SourceType has correct values"""
+        assert SourceType.REFERENCE.value == "reference"
+        assert SourceType.PRODUCT.value == "product"
+    
+    def test_source_type_enum_members(self):
+        """Test that SourceType has expected members"""
+        assert len(SourceType) == 2
+        assert SourceType.REFERENCE in SourceType
+        assert SourceType.PRODUCT in SourceType

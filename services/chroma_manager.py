@@ -51,12 +51,54 @@ class ChromaDBManager:
         
         logger.info(f"Collection '{collection_name}' initialized with {self.collection.count()} records")
     
+    def _generate_unique_id(self, code: str) -> str:
+        """
+        Generate unique ID for product records using code + counter pattern
+        
+        For reference records, uses the code directly.
+        For product records, uses format: {code}_{counter}
+        
+        Args:
+            code: ТНВЭД code
+            
+        Returns:
+            Unique ID string
+        """
+        # Check if base code exists
+        existing_record = self.get_by_code(code)
+        if existing_record is None:
+            # No existing record, use code as ID
+            return code
+        
+        # Find next available counter
+        counter = 1
+        while True:
+            candidate_id = f"{code}_{counter:03d}"
+            try:
+                result = self.collection.get(
+                    ids=[candidate_id],
+                    include=["metadatas"]
+                )
+                if len(result["ids"]) == 0:
+                    # ID is available
+                    return candidate_id
+                counter += 1
+                
+                # Safety check to prevent infinite loop
+                if counter > 9999:
+                    raise ValueError(f"Too many records for code {code}, cannot generate unique ID")
+                    
+            except Exception as e:
+                logger.error(f"Error checking ID {candidate_id}: {e}")
+                raise
+
     def add_batch(
         self,
         ids: List[str],
         embeddings: List[List[float]],
         metadatas: List[Dict],
-        documents: List[str]
+        documents: List[str],
+        source_type: str = "reference"
     ) -> None:
         """
         Add a batch of records to the collection with upsert functionality
@@ -68,9 +110,10 @@ class ChromaDBManager:
             embeddings: List of embedding vectors
             metadatas: List of metadata dictionaries
             documents: List of document texts (normalized descriptions)
+            source_type: Type of source ("reference" or "product")
             
         Raises:
-            ValueError: If input lists have different lengths
+            ValueError: If input lists have different lengths or invalid source_type
         """
         if not (len(ids) == len(embeddings) == len(metadatas) == len(documents)):
             raise ValueError(
@@ -79,26 +122,95 @@ class ChromaDBManager:
                 f"metadatas={len(metadatas)}, documents={len(documents)}"
             )
         
+        if source_type not in ["reference", "product"]:
+            raise ValueError(f"Invalid source_type: {source_type}. Must be 'reference' or 'product'")
+        
         if not ids:
             logger.warning("add_batch called with empty lists, skipping")
             return
         
-        logger.debug(f"Adding batch of {len(ids)} records to collection")
+        logger.debug(f"Adding batch of {len(ids)} records to collection with source_type: {source_type}")
+        
+        # Enhance metadata with source_type information
+        enhanced_metadatas = []
+        for metadata in metadatas:
+            enhanced_metadata = metadata.copy()
+            enhanced_metadata["source_type"] = source_type
+            
+            # Set default source_name if not provided
+            if "source_name" not in enhanced_metadata:
+                enhanced_metadata["source_name"] = "tnved_official" if source_type == "reference" else "unknown"
+            
+            enhanced_metadatas.append(enhanced_metadata)
         
         # ChromaDB's add method performs upsert by default
         self.collection.upsert(
             ids=ids,
             embeddings=embeddings,
-            metadatas=metadatas,
+            metadatas=enhanced_metadatas,
             documents=documents
         )
         
-        logger.info(f"Successfully added/updated {len(ids)} records")
+        logger.info(f"Successfully added/updated {len(ids)} records with source_type: {source_type}")
+
+    def migrate_existing_records(self) -> int:
+        """
+        Migrate existing records to include source_type metadata
+        
+        Assigns source_type "reference" to all existing records that don't have it.
+        
+        Returns:
+            Number of records migrated
+        """
+        logger.info("Starting migration of existing records")
+        
+        # Get all records
+        all_records = self.collection.get(
+            include=["metadatas", "documents", "embeddings"]
+        )
+        
+        migrated_count = 0
+        batch_size = 100
+        
+        for i in range(0, len(all_records["ids"]), batch_size):
+            batch_ids = all_records["ids"][i:i + batch_size]
+            batch_metadatas = all_records["metadatas"][i:i + batch_size]
+            batch_documents = all_records["documents"][i:i + batch_size]
+            batch_embeddings = all_records["embeddings"][i:i + batch_size]
+            
+            updated_metadatas = []
+            batch_updated = False
+            
+            for j, metadata in enumerate(batch_metadatas):
+                if "source_type" not in metadata:
+                    # Need to migrate this record
+                    updated_metadata = metadata.copy()
+                    updated_metadata["source_type"] = "reference"
+                    updated_metadata["source_name"] = "tnved_official"
+                    updated_metadatas.append(updated_metadata)
+                    batch_updated = True
+                    migrated_count += 1
+                else:
+                    # Already has source_type, keep as is
+                    updated_metadatas.append(metadata)
+            
+            if batch_updated:
+                # Update this batch
+                self.collection.upsert(
+                    ids=batch_ids,
+                    embeddings=batch_embeddings,
+                    metadatas=updated_metadatas,
+                    documents=batch_documents
+                )
+        
+        logger.info(f"Migration completed. Updated {migrated_count} records")
+        return migrated_count
     
     def query(
         self,
         query_embedding: List[float],
-        n_results: int = 5
+        n_results: int = 5,
+        source_filter: Optional[str] = None
     ) -> Dict:
         """
         Perform similarity search using query embedding
@@ -106,6 +218,7 @@ class ChromaDBManager:
         Args:
             query_embedding: Query vector for similarity search
             n_results: Number of top results to return
+            source_filter: Optional filter by source_type ("reference", "product", or None for all)
             
         Returns:
             Dictionary with query results containing:
@@ -115,10 +228,13 @@ class ChromaDBManager:
                 - documents: List of normalized texts
                 
         Raises:
-            ValueError: If n_results is not positive
+            ValueError: If n_results is not positive or invalid source_filter
         """
         if n_results <= 0:
             raise ValueError(f"n_results must be positive, got {n_results}")
+        
+        if source_filter is not None and source_filter not in ["reference", "product"]:
+            raise ValueError(f"Invalid source_filter: {source_filter}. Must be 'reference', 'product', or None")
         
         # Get total count to avoid requesting more than available
         total_count = self.collection.count()
@@ -133,11 +249,18 @@ class ChromaDBManager:
                 "documents": [[]]
             }
         
+        # Build where clause for filtering
+        where_clause = None
+        if source_filter is not None:
+            where_clause = {"source_type": source_filter}
+            logger.debug(f"Applying source filter: {source_filter}")
+        
         logger.debug(f"Querying collection for top {actual_n_results} results")
         
         results = self.collection.query(
             query_embeddings=[query_embedding],
-            n_results=actual_n_results
+            n_results=actual_n_results,
+            where=where_clause
         )
         
         logger.info(f"Query returned {len(results['ids'][0])} results")
@@ -177,6 +300,42 @@ class ChromaDBManager:
             logger.error(f"Error retrieving code {code}: {e}")
             return None
     
+    def get_all_records_for_code(self, code: str) -> List[Dict]:
+        """
+        Retrieve all records (reference and product) for a specific ТНВЭД code
+        
+        Args:
+            code: ТНВЭД code to retrieve
+            
+        Returns:
+            List of dictionaries with record data
+        """
+        try:
+            # Get records where the code matches (both direct ID and code metadata)
+            results = self.collection.get(
+                where={"code": code},
+                include=["metadatas", "documents", "embeddings"]
+            )
+            
+            records = []
+            for i in range(len(results["ids"])):
+                embedding_value = None
+                if results.get("embeddings") is not None and len(results["embeddings"]) > i:
+                    embedding_value = results["embeddings"][i]
+                
+                record = {
+                    "id": results["ids"][i],
+                    "metadata": results["metadatas"][i] if results.get("metadatas") else {},
+                    "document": results["documents"][i] if results.get("documents") else "",
+                    "embedding": embedding_value
+                }
+                records.append(record)
+            
+            return records
+        except Exception as e:
+            logger.error(f"Error retrieving records for code {code}: {e}")
+            return []
+
     def count(self) -> int:
         """
         Get the total number of records in the collection
@@ -250,7 +409,10 @@ class ChromaDBManager:
                 code=ids[i],
                 description=metadata.get("description", ""),
                 normalized_text=documents[i],
-                similarity_score=similarity_score
+                similarity_score=similarity_score,
+                source_type=metadata.get("source_type", "reference"),
+                source_name=metadata.get("source_name"),
+                source_id=metadata.get("source_id")
             )
             search_results.append(search_result)
         
