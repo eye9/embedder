@@ -54,6 +54,7 @@ logs/
 # ChromaDB
 chroma_db/
 test_empty_db/
+benchmark_dbs/
 
 # Data files
 *.xlsx

@@ -24,12 +24,31 @@
 ├── models/              # Модели данных
 │   ├── tnved_record.py  # Модель записи ТНВЭД
 │   └── search_result.py # Модель результата поиска
-├── services/            # Сервисы (будут добавлены)
+├── services/            # Сервисы системы
+│   ├── chroma_manager.py      # Управление ChromaDB
+│   ├── embedding_generator.py # Генерация эмбеддингов
+│   ├── text_normalizer.py     # Нормализация текста
+│   ├── tnved_loader.py        # Загрузка данных
+│   └── tnved_searcher.py      # Поиск по базе
 ├── utils/               # Утилиты
 │   ├── config.py        # Управление конфигурацией
 │   └── logger.py        # Настройка логирования
+├── benchmarks/          # Тестирование и сравнение моделей
+│   ├── test_single_model.py      # Тест одной модели
+│   ├── compare_models.py         # Сравнение всех моделей
+│   ├── compare_search_results.py # Сравнение результатов
+│   └── compare_prefix_impact.py  # Сравнение префиксов
+├── docs/                # Документация
+│   ├── MODEL_ALTERNATIVES_SUMMARY.md  # Альтернативы FRIDA
+│   ├── QUICK_MODEL_COMPARISON.md      # Быстрый старт
+│   ├── MODEL_COMPARISON_GUIDE.md      # Полное руководство
+│   ├── FAQ_СРАВНЕНИЕ_МОДЕЛЕЙ.md       # FAQ
+│   ├── FRIDA_PREFIX_USAGE.md          # Использование префиксов
+│   └── ... (другие документы)
 ├── tests/               # Тесты
 ├── config.yaml          # Конфигурационный файл
+├── load_tnved.py        # CLI для загрузки данных
+├── search_tnved.py      # CLI для поиска
 └── requirements.txt     # Зависимости Python
 ```
 
@@ -379,6 +398,59 @@ results = searcher.search("кофейные зерна арабика", top_k=5)
 for result in results:
     print(f"{result.code}: {result.description} (score: {result.similarity_score:.4f})")
 ```
+
+## Сравнение моделей эмбеддингов
+
+Система поддерживает несколько моделей эмбеддингов. Помимо FRIDA, доступны более быстрые и компактные альтернативы:
+
+### Альтернативные модели
+
+1. **E5-Small** (рекомендуется для GTX 1060 3GB)
+   - Размер: 470 MB (в 6.5 раз меньше FRIDA)
+   - Скорость: в 3-5 раз быстрее
+   - Качество: отличное для русского языка
+
+2. **RuBERT-Tiny2** (самая быстрая)
+   - Размер: 120 MB (в 25 раз меньше FRIDA)
+   - Скорость: в 10 раз быстрее
+   - Качество: хорошее для русского языка
+
+3. **MiniLM-L12** (проверенная)
+   - Размер: 470 MB
+   - Скорость: в 4 раза быстрее
+   - Качество: надежное
+
+### Быстрое тестирование
+
+```bash
+# Установить зависимости
+pip install tabulate
+
+# Протестировать одну модель
+python benchmarks/test_single_model.py intfloat/multilingual-e5-small cuda
+
+# Сравнить все модели
+python benchmarks/compare_models.py
+```
+
+### Смена модели
+
+```bash
+# 1. Обновите config.yaml
+# model:
+#   name: "intfloat/multilingual-e5-small"
+#   device: "cuda"
+
+# 2. Пересоздайте базу данных
+python load_tnved.py tnved_full10_new.xlsx --reset
+
+# 3. Протестируйте поиск
+python search_tnved.py "кофе в зернах"
+```
+
+**Подробнее:** См. `docs/MODEL_ALTERNATIVES_SUMMARY.md` и `benchmarks/README.md`
+
+---
 
 ## Тестирование
 

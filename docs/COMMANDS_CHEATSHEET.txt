@@ -1,0 +1,224 @@
+═══════════════════════════════════════════════════════════════════════════════
+                    ШПАРГАЛКА: КОМАНДЫ ДЛЯ СРАВНЕНИЯ МОДЕЛЕЙ
+═══════════════════════════════════════════════════════════════════════════════
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ УСТАНОВКА ЗАВИСИМОСТЕЙ                                                      │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+pip install tabulate
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ БЫСТРЫЙ ТЕСТ ОДНОЙ МОДЕЛИ                                                   │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+# E5-Small (рекомендуется для GTX 1060 3GB)
+python test_single_model.py intfloat/multilingual-e5-small cuda
+python test_single_model.py intfloat/multilingual-e5-small
+
+# RuBERT-Tiny2 (самая быстрая)
+python test_single_model.py cointegrated/rubert-tiny2 cuda
+python test_single_model.py cointegrated/rubert-tiny2
+
+# MiniLM-L12
+python test_single_model.py sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 cuda
+python test_single_model.py sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+
+# FRIDA (текущая)
+python test_single_model.py ai-forever/FRIDA
+python test_single_model.py ai-forever/FRIDA cuda
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ ПОЛНОЕ СРАВНЕНИЕ                                                            │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+# Сравнение всех моделей (скорость загрузки и генерации)
+# ⚠️ Поиск работает только для модели, с которой создана база
+python compare_models.py
+
+# Детальное сравнение результатов поиска
+# ⚠️ Требует пересоздания базы для каждой модели
+python compare_search_results.py
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ СМЕНА МОДЕЛИ                                                                │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+# 1. Отредактируйте config.yaml (пример для E5-Small):
+#
+# model:
+#   name: "intfloat/multilingual-e5-small"
+#   device: "cuda"
+# processing:
+#   batch_size: 32
+
+# 2. Пересоздайте базу данных (ОБЯЗАТЕЛЬНО!)
+python load_tnved.py
+
+# 3. Протестируйте поиск
+python search_tnved.py
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ КОНФИГУРАЦИИ ДЛЯ config.yaml                                                │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+# E5-Small с CUDA (для GTX 1060 3GB)
+model:
+  name: "intfloat/multilingual-e5-small"
+  device: "cuda"
+processing:
+  batch_size: 32
+
+# E5-Small с CPU
+model:
+  name: "intfloat/multilingual-e5-small"
+  device: "cpu"
+processing:
+  batch_size: 100
+
+# RuBERT-Tiny2 с CUDA
+model:
+  name: "cointegrated/rubert-tiny2"
+  device: "cuda"
+processing:
+  batch_size: 64
+
+# RuBERT-Tiny2 с CPU
+model:
+  name: "cointegrated/rubert-tiny2"
+  device: "cpu"
+processing:
+  batch_size: 100
+
+# MiniLM-L12 с CUDA
+model:
+  name: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+  device: "cuda"
+processing:
+  batch_size: 32
+
+# MiniLM-L12 с CPU
+model:
+  name: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+  device: "cpu"
+processing:
+  batch_size: 100
+
+# FRIDA (текущая)
+model:
+  name: "ai-forever/FRIDA"
+  device: "cpu"
+processing:
+  batch_size: 50
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ ПРОВЕРКА CUDA                                                               │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+# Проверить доступность CUDA
+python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')"
+
+# Проверить версию CUDA
+python -c "import torch; print(f'CUDA version: {torch.version.cuda}')"
+
+# Проверить имя GPU
+python -c "import torch; print(f'GPU: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else \"N/A\"}')"
+
+# Проверить память GPU
+python -c "import torch; print(f'GPU memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB' if torch.cuda.is_available() else 'N/A')"
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ ДОКУМЕНТАЦИЯ                                                                │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+# Открыть краткое резюме (НАЧНИТЕ ЗДЕСЬ)
+notepad MODEL_ALTERNATIVES_SUMMARY.md
+
+# Открыть быстрый старт
+notepad QUICK_MODEL_COMPARISON.md
+
+# Открыть полное руководство
+notepad MODEL_COMPARISON_GUIDE.md
+
+# Открыть визуальное сравнение
+notepad MODELS_VISUAL_COMPARISON.txt
+
+# Открыть список новых файлов
+notepad НОВЫЕ_ФАЙЛЫ_СРАВНЕНИЕ_МОДЕЛЕЙ.md
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ ТИПИЧНЫЙ WORKFLOW                                                           │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+# Шаг 1: Установить зависимости
+pip install tabulate
+
+# Шаг 2: Быстро протестировать E5-Small
+python test_single_model.py intfloat/multilingual-e5-small cuda
+
+# Шаг 3: Если понравилось, запустить полное сравнение
+python compare_models.py
+
+# Шаг 4: Посмотреть детальное сравнение результатов
+python compare_search_results.py
+
+# Шаг 5: Обновить config.yaml с выбранной моделью
+
+# Шаг 6: Пересоздать базу данных
+python load_tnved.py
+
+# Шаг 7: Протестировать поиск
+python search_tnved.py
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ РЕКОМЕНДАЦИИ                                                                │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+GTX 1060 3GB + CUDA:
+  → E5-Small с CUDA (batch_size: 32)
+
+CPU-only системы:
+  → RuBERT-Tiny2 с CPU (batch_size: 100)
+
+Максимальное качество:
+  → FRIDA с CPU (batch_size: 50)
+
+Real-time приложения:
+  → RuBERT-Tiny2 (самая быстрая)
+
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ ВАЖНЫЕ ЗАМЕЧАНИЯ                                                            │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+⚠️  При смене модели ОБЯЗАТЕЛЬНО пересоздайте базу данных:
+    python load_tnved.py
+    
+    Причина: Разные модели создают эмбеддинги разной размерности!
+    - FRIDA: 1536
+    - E5-Small: 384
+    - MiniLM-L12: 384
+    - RuBERT-Tiny2: 312
+
+⚠️  Первый запуск модели загрузит её из HuggingFace (может занять время)
+
+⚠️  Модели кэшируются локально (~/.cache/huggingface/)
+
+⚠️  Для CUDA убедитесь, что PyTorch установлен с поддержкой CUDA:
+    pip install torch --index-url https://download.pytorch.org/whl/cu121
+
+⚠️  compare_models.py покажет поиск только для модели, с которой создана база
+    Для полного тестирования используйте test_single_model.py
+
+
+═══════════════════════════════════════════════════════════════════════════════
+                              КОНЕЦ ШПАРГАЛКИ
+═══════════════════════════════════════════════════════════════════════════════

@@ -6,7 +6,13 @@ This script compares embeddings and similarity scores with and without prefixes
 to show how prefixes improve semantic matching.
 """
 
+import sys
+import os
 import numpy as np
+
+# Добавить корневую директорию проекта в путь
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from services.embedding_generator import EmbeddingGenerator
 from services.text_normalizer import TextNormalizer
 

@@ -229,10 +229,20 @@ class ChromaDBManager:
         documents = query_results["documents"][0] if query_results["documents"] else []
         
         for i in range(len(ids)):
-            # Convert distance to similarity score (1 - normalized_distance)
-            # ChromaDB uses L2 distance by default, convert to similarity
+            # Convert distance to similarity score
+            # ChromaDB by default uses squared L2 distance (smaller = more similar)
+            # We need to convert distance to similarity score in [0, 1] range
             distance = distances[i]
-            similarity_score = 1.0 / (1.0 + distance)  # Convert distance to similarity
+            
+            # For L2/squared L2 distance: smaller distance = higher similarity
+            # Use inverse formula: similarity = 1 / (1 + distance)
+            # This ensures:
+            # - distance = 0 → similarity = 1.0 (perfect match)
+            # - distance → ∞ → similarity → 0.0 (no match)
+            similarity_score = 1.0 / (1.0 + distance)
+            
+            # Clamp to [0, 1] range for safety
+            similarity_score = max(0.0, min(1.0, similarity_score))
             
             metadata = metadatas[i]
             
