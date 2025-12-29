@@ -37,7 +37,7 @@ def main():
         setup_logging(
             level=config.logging.level,
             log_file=config.logging.file,
-            format_string=config.logging.format
+            log_format=config.logging.format
         )
         print("✓ Logging configured")
         

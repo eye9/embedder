@@ -4,7 +4,7 @@
 # Model configuration
 model:
   name: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-  device: "cuda"  # or "cuda" if GPU available
+  device: "cuda"  # or "cpu" if GPU not available
 
 # Database configuration
 database:

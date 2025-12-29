@@ -58,11 +58,66 @@ class TNVEDAPIService:
         """Create FastAPI application with proper configuration"""
         return FastAPI(
             title="ТНВЭД Embedder API",
-            description="API for semantic search of ТНВЭД codes using vector embeddings",
+            description="""
+## ТНВЭД Embedder API
+
+REST API service for semantic search of ТНВЭД codes using vector embeddings.
+
+### Features
+- 🔍 **Semantic Search**: Find ТНВЭД codes by text description using AI embeddings
+- 📊 **Data Loading**: Load ТНВЭД data from Excel files into vector database
+- 🔒 **Authentication**: API key-based authentication (optional)
+- 🚦 **Rate Limiting**: Configurable request rate limiting
+- 🌐 **CORS Support**: Cross-origin resource sharing for web applications
+
+### Model Information
+- **Model**: `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`
+- **Device**: CUDA (with CPU fallback)
+- **Embedding Dimension**: 384
+- **Languages**: Multilingual support with Russian optimization
+
+### Authentication
+When authentication is enabled, include your API key in requests:
+- **Header**: `X-API-Key: your-api-key`
+- **Bearer Token**: `Authorization: Bearer your-api-key`
+
+### Rate Limiting
+- **Default**: 60 requests per minute per IP
+- **Configurable**: Set in configuration file
+- **Headers**: Rate limit info included in response headers
+            """,
             version="1.0.0",
+            contact={
+                "name": "ТНВЭД Embedder API",
+                "url": "https://github.com/your-repo/tnved-embedder",
+            },
+            license_info={
+                "name": "MIT License",
+                "url": "https://opensource.org/licenses/MIT",
+            },
             docs_url="/docs" if not self.config.api.auth.enabled else None,
             redoc_url="/redoc" if not self.config.api.auth.enabled else None,
             openapi_url="/openapi.json" if not self.config.api.auth.enabled else None,
+            servers=[
+                {
+                    "url": f"http://{self.config.api.host}:{self.config.api.port}",
+                    "description": "Development server"
+                }
+            ],
+            tags_metadata=[
+                {
+                    "name": "search",
+                    "description": "Search for ТНВЭД codes by text description",
+                },
+                {
+                    "name": "data",
+                    "description": "Data loading and management operations",
+                },
+                {
+                    "name": "system",
+                    "description": "System health and statistics",
+                },
+            ],
         )
     
     def _setup_middleware(self):
@@ -108,9 +163,16 @@ class TNVEDAPIService:
                 "docs": "/docs" if not self.config.api.auth.enabled else "Authentication required"
             }
         
-        @self.app.get("/api/v1/health", response_model=HealthResponse)
+        @self.app.get("/api/v1/health", response_model=HealthResponse, tags=["system"])
         async def health_check():
-            """Health check endpoint"""
+            """Health check endpoint
+            
+            Returns the current health status of the API service including:
+            - Service status (healthy/unhealthy)
+            - Number of records in database
+            - Whether the embedding model is loaded
+            - API version
+            """
             try:
                 database_records = self.searcher.get_database_stats()["total_records"] if self.searcher else 0
                 model_loaded = self.embedder is not None
@@ -134,9 +196,17 @@ class TNVEDAPIService:
                     }
                 )
         
-        @self.app.get("/api/v1/stats", response_model=StatsResponse)
+        @self.app.get("/api/v1/stats", response_model=StatsResponse, tags=["system"])
         async def get_stats(api_key: str = Depends(auth) if auth else None):
-            """Get service statistics"""
+            """Get service statistics
+            
+            Returns detailed statistics about the API service including:
+            - Total number of searches performed
+            - Total records in database
+            - Average search time
+            - Service uptime
+            - Database statistics
+            """
             uptime = time.time() - self.start_time
             avg_search_time = self.total_search_time / max(self.search_count, 1)
             
@@ -152,12 +222,30 @@ class TNVEDAPIService:
                 database_stats=database_stats
             )
         
-        @self.app.post("/api/v1/search", response_model=SearchResponse)
+        @self.app.post("/api/v1/search", response_model=SearchResponse, tags=["search"])
         async def search_tnved(
             request: SearchRequest,
             api_key: str = Depends(auth) if auth else None
         ):
-            """Search for ТНВЭД codes by text description"""
+            """Search for ТНВЭД codes by text description
+            
+            Performs semantic search using AI embeddings to find the most relevant ТНВЭД codes
+            for a given product description.
+            
+            **Example request:**
+            ```json
+            {
+                "query": "кофейные зерна арабика",
+                "top_k": 5
+            }
+            ```
+            
+            **Features:**
+            - Semantic similarity search using multilingual embeddings
+            - Configurable number of results (1-50)
+            - Results ranked by similarity score
+            - Fast response times with GPU acceleration
+            """
             start_time = time.time()
             
             try:
@@ -186,12 +274,32 @@ class TNVEDAPIService:
                 logger.error(f"Search failed for query '{request.query}': {e}")
                 raise
         
-        @self.app.post("/api/v1/load", response_model=LoadResponse)
+        @self.app.post("/api/v1/load", response_model=LoadResponse, tags=["data"])
         async def load_data(
             request: LoadRequest,
             api_key: str = Depends(auth) if auth else None
         ):
-            """Load ТНВЭД data from Excel file"""
+            """Load ТНВЭД data from Excel file
+            
+            Loads ТНВЭД codes and descriptions from an Excel file into the vector database.
+            The file should contain 'Code' and 'TextEx' columns.
+            
+            **Process:**
+            1. Reads Excel file and validates required columns
+            2. Normalizes text descriptions using Russian language processing
+            3. Generates vector embeddings for semantic search
+            4. Stores data in ChromaDB with batch processing
+            
+            **Example request:**
+            ```json
+            {
+                "file_path": "/path/to/tnved_data.xlsx",
+                "batch_size": 100
+            }
+            ```
+            
+            **Note:** This operation may take several minutes for large files.
+            """
             start_time = time.time()
             
             try:
@@ -210,12 +318,22 @@ class TNVEDAPIService:
                 logger.error(f"Data loading failed for file '{request.file_path}': {e}")
                 raise
         
-        @self.app.get("/api/v1/code/{code}", response_model=CodeDetailsResponse)
+        @self.app.get("/api/v1/code/{code}", response_model=CodeDetailsResponse, tags=["search"])
         async def get_code_details(
             code: str,
             api_key: str = Depends(auth) if auth else None
         ):
-            """Get details for a specific ТНВЭД code"""
+            """Get details for a specific ТНВЭД code
+            
+            Retrieves detailed information about a specific ТНВЭД code including:
+            - Original description
+            - Normalized text used for search
+            - Code validation and formatting
+            
+            **Example:** `/api/v1/code/0901110000`
+            
+            Returns 404 if the code is not found in the database.
+            """
             try:
                 result = self.searcher.get_code_details(code)
                 

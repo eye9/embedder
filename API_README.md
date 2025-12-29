@@ -2,6 +2,20 @@
 
 REST API service for semantic search of ТНВЭД codes using vector embeddings.
 
+## Model Information
+
+The API uses the **sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2** model by default, which provides:
+
+- **Multilingual support**: Optimized for Russian and other languages
+- **Compact size**: Efficient MiniLM architecture (L12 layers)
+- **High performance**: Good balance between speed and accuracy
+- **GPU acceleration**: CUDA enabled by default for faster processing
+
+**Default Configuration:**
+- Model: `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`
+- Device: `cuda` (falls back to `cpu` if GPU unavailable)
+- Embedding dimension: 384
+
 ## Features
 
 - 🔍 **Semantic Search**: Find ТНВЭД codes by text description using AI embeddings
@@ -244,7 +258,7 @@ You can configure the API using environment variables:
 export TNVED_API_HOST="0.0.0.0"
 export TNVED_API_PORT="8000"
 export TNVED_API_ENABLED="true"
-export TNVED_MODEL_NAME="ai-forever/FRIDA"
+export TNVED_MODEL_NAME="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 export TNVED_DATABASE_PATH="./chroma_db"
 ```
 
@@ -347,21 +361,22 @@ When authentication is disabled, access interactive documentation:
 
 1. **Model Loading Fails**
    - Check internet connection for model download
-   - Verify model name in configuration
-   - Check available disk space
+   - Verify model name: `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`
+   - Check available disk space (~500MB for model files)
 
 2. **Database Connection Issues**
    - Verify database path exists and is writable
    - Check ChromaDB version compatibility
 
 3. **High Memory Usage**
-   - Reduce batch size in configuration
-   - Use CPU instead of GPU if memory limited
+   - MiniLM-L12-v2 requires ~1.5GB GPU memory or ~2GB system RAM
+   - Reduce batch size in configuration if needed
+   - Use CPU instead of CUDA if GPU memory limited
 
 4. **Slow Search Performance**
-   - Enable GPU if available
+   - Enable CUDA if GPU available (default)
    - Optimize database configuration
-   - Consider using smaller embedding model
+   - Consider batch size adjustments for your hardware
 
 ### Logs
 

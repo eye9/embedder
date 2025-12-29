@@ -17,8 +17,8 @@ class ConfigurationError(Exception):
 @dataclass
 class ModelConfig:
     """Model configuration"""
-    name: str = "ai-forever/FRIDA"
-    device: str = "cpu"
+    name: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    device: str = "cuda"
 
 
 @dataclass

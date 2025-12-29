@@ -194,22 +194,30 @@ class TNVEDSearcher:
         
         logger.debug(f"Retrieving details for code: {code}")
         
-        record = self.db_manager.get_by_code(code)
-        
-        if record is None:
-            logger.info(f"Code not found: {code}")
-            return None
-        
-        # Convert to SearchResult (similarity score is 1.0 for exact match)
-        search_result = SearchResult(
-            code=record["id"],
-            description=record["metadata"].get("description", ""),
-            normalized_text=record["document"],
-            similarity_score=1.0
-        )
-        
-        logger.debug(f"Retrieved details for code: {code}")
-        return search_result
+        try:
+            record = self.db_manager.get_by_code(code)
+            
+            if record is None:
+                logger.info(f"Code not found: {code}")
+                return None
+            
+            # Convert to SearchResult (similarity score is 1.0 for exact match)
+            search_result = SearchResult(
+                code=record["id"],
+                description=record["metadata"].get("description", ""),
+                normalized_text=record["document"],
+                similarity_score=1.0,
+                source_type=record["metadata"].get("source_type", "reference"),
+                source_name=record["metadata"].get("source_name"),
+                source_id=record["metadata"].get("source_id")
+            )
+            
+            logger.debug(f"Retrieved details for code: {code}")
+            return search_result
+            
+        except Exception as e:
+            logger.error(f"Error retrieving details for code {code}: {e}", exc_info=True)
+            raise
     
     def get_database_stats(self) -> dict:
         """
