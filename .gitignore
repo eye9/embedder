@@ -78,8 +78,19 @@ Thumbs.db
 # Temporary files
 tmp/
 temp/
+temp_files/
+!temp_files/.gitkeep
 *.tmp
 ~$*
+
+# Batch processor specific
+batch_processor.log
+celerybeat-schedule
+celerybeat.pid
+
+# Docker
+.dockerignore
+docker-compose.override.yml
 
 # Environment variables
 .env

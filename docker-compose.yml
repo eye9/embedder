@@ -1,0 +1,87 @@
+version: '3.8'
+
+services:
+  # Redis service for task queue and caching
+  redis:
+    image: redis:7-alpine
+    container_name: batch_processor_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Web application
+  web:
+    build: .
+    container_name: batch_processor_web
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - TEMP_DIR=/app/temp_files
+      - DEBUG=false
+    volumes:
+      - ./temp_files:/app/temp_files
+      - ./chroma_db:/app/chroma_db
+      - ./batch_processor_config.yaml:/app/batch_processor_config.yaml
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    command: uvicorn batch_processor.web.app:app --host 0.0.0.0 --port 8000
+
+  # Celery worker for background processing
+  worker:
+    build: .
+    container_name: batch_processor_worker
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - TEMP_DIR=/app/temp_files
+    volumes:
+      - ./temp_files:/app/temp_files
+      - ./chroma_db:/app/chroma_db
+      - ./batch_processor_config.yaml:/app/batch_processor_config.yaml
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    command: celery -A batch_processor.workers.celery_app worker --loglevel=info --concurrency=2
+
+  # Celery beat for scheduled tasks (cleanup, monitoring)
+  beat:
+    build: .
+    container_name: batch_processor_beat
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    volumes:
+      - ./temp_files:/app/temp_files
+      - ./batch_processor_config.yaml:/app/batch_processor_config.yaml
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    command: celery -A batch_processor.workers.celery_app beat --loglevel=info
+
+volumes:
+  redis_data:
+    driver: local
+
+networks:
+  default:
+    name: batch_processor_network

@@ -1,0 +1,63 @@
+# Batch Excel Processor Configuration
+
+# Redis configuration for task queue and caching
+redis:
+  host: "localhost"
+  port: 6379
+  db: 0
+  password: null
+
+# Celery configuration for background processing
+celery:
+  broker_url: "redis://localhost:6379/0"
+  result_backend: "redis://localhost:6379/0"
+  task_serializer: "json"
+  accept_content: ["json"]
+  result_serializer: "json"
+  timezone: "UTC"
+  enable_utc: true
+  worker_prefetch_multiplier: 1
+  task_acks_late: true
+  worker_max_tasks_per_child: 1000
+
+# Processing configuration
+processing:
+  chunk_size: 1000
+  default_algorithm: "similarity_top1"
+  confidence_threshold: 0.7
+  llm_top_k: 5
+  max_file_size_mb: 100
+  supported_extensions: [".xlsx", ".xls"]
+  required_columns: ["Product Detailed Description"]
+  output_columns: ["TNVED_Code", "Selection_Reason"]
+
+# Security settings
+security:
+  session_timeout_hours: 24
+  max_concurrent_uploads: 10
+  allowed_hosts: ["*"]
+  cors_origins: ["*"]
+
+# File management
+files:
+  temp_dir: "./temp_files"
+  cleanup_interval_hours: 1
+  max_storage_gb: 10.0
+  auto_cleanup_enabled: true
+
+# Web application settings
+web:
+  host: "0.0.0.0"
+  port: 8000
+  debug: false
+  reload: false
+  workers: 1
+  log_level: "info"
+
+# Authentication settings
+auth:
+  enabled: true
+  users:
+    admin: "admin123"
+    user: "password"
+  session_secret: "change-this-secret-key-in-production"
