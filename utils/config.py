@@ -9,6 +9,11 @@ from typing import Optional, List
 from pathlib import Path
 
 
+class ConfigurationError(Exception):
+    """Raised when configuration is invalid"""
+    pass
+
+
 @dataclass
 class ModelConfig:
     """Model configuration"""

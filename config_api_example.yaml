@@ -1,0 +1,71 @@
+# ТНВЭД Embedder API Configuration Example
+# Copy this file to config.yaml and modify as needed
+
+# Model configuration
+model:
+  name: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+  device: "cuda"  # or "cuda" if GPU available
+
+# Database configuration
+database:
+  path: "./chroma_db"
+  collection_name: "tnved"
+  default_source_name: "tnved_official"
+
+# Processing configuration
+processing:
+  batch_size: 100
+
+# Search configuration
+search:
+  default_top_k: 5
+  group_by_code: false
+  prioritize_reference: true
+  show_source_info: true
+
+# Logging configuration
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "tnved_embedder.log"
+
+# API configuration
+api:
+  enabled: true
+  host: "0.0.0.0"
+  port: 8000
+  
+  # Authentication configuration
+  auth:
+    enabled: false  # Set to true to enable API key authentication
+    api_keys:
+      - "your-api-key-1"
+      - "your-api-key-2"
+  
+  # CORS configuration
+  cors:
+    enabled: true
+    origins:
+      - "http://localhost:3000"
+      - "http://localhost:8080"
+      - "https://yourdomain.com"
+  
+  # Rate limiting configuration
+  rate_limit:
+    requests_per_minute: 60
+
+# Sources configuration
+sources:
+  reference:
+    name: "tnved_official"
+    display_name: "Официальный справочник ТНВЭД"
+  product:
+    default_name: "unknown_products"
+    display_name: "Товары с подобранными кодами"
+
+# Display configuration
+display:
+  source_format: "detailed"  # Options: "detailed", "compact", "minimal"
+  show_source_id: true
+  show_similarity_score: true
+  max_description_length: 100
