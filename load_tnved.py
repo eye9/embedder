@@ -35,8 +35,10 @@ from pathlib import Path
 
 from services import TextNormalizer, EmbeddingGenerator, TNVEDLoader
 from services.tnved_loader import DataLoadError
+from services.product_loader import ProductLoader
 from utils.config import Config
 from utils.logger import setup_logging, get_logger
+from utils.tnved_validator import validate_tnved_code, TNVEDValidationError
 
 
 def parse_arguments():
@@ -55,6 +57,8 @@ Examples:
   %(prog)s tnved_full10_new.xlsx --config config.yaml
   %(prog)s tnved_full10_new.xlsx --batch-size 50 --db-path ./my_db
   %(prog)s tnved_full10_new.xlsx --reset --verbose
+  %(prog)s products.xlsx --source-type product --source-name "customs_2024_q1"
+  %(prog)s supplier_catalog.xlsx --source-type product --source-name "supplier_abc"
         """
     )
     
@@ -107,6 +111,22 @@ Examples:
         choices=["cpu", "cuda"],
         default=None,
         help="Device to use for embeddings: cpu or cuda (default: cpu)"
+    )
+    
+    # Product loading options
+    parser.add_argument(
+        "--source-type",
+        type=str,
+        choices=["reference", "product"],
+        default="reference",
+        help="Type of data being loaded: reference (official ТНВЭД) or product (real products with codes) (default: reference)"
+    )
+    
+    parser.add_argument(
+        "--source-name",
+        type=str,
+        default=None,
+        help="Name of the data source (e.g., 'customs_2024_q1', 'supplier_catalog'). Required when --source-type is 'product'"
     )
     
     # Action options
@@ -212,6 +232,11 @@ def main():
     # Parse arguments
     args = parse_arguments()
     
+    # Validate source-name requirement for product loading
+    if args.source_type == "product" and not args.source_name:
+        print("[ERROR] --source-name is required when --source-type is 'product'", file=sys.stderr)
+        sys.exit(1)
+    
     # Load configuration
     config = load_configuration(args)
     
@@ -237,6 +262,39 @@ def main():
         print(f"[ERROR] Excel file not found: {args.excel_file}", file=sys.stderr)
         sys.exit(1)
     
+    # Validate ТНВЭД codes in file if requested (optional pre-validation)
+    if not args.dry_run and not args.quiet:
+        print("Validating ТНВЭД codes in Excel file...")
+        try:
+            import pandas as pd
+            df = pd.read_excel(args.excel_file)
+            
+            if "Code" in df.columns:
+                codes = df["Code"].dropna().astype(str).tolist()
+                invalid_codes = []
+                
+                for code in codes[:10]:  # Check first 10 codes as sample
+                    try:
+                        validate_tnved_code(code, strict=False)
+                    except (TNVEDValidationError, ValueError) as e:
+                        invalid_codes.append((code, str(e)))
+                
+                if invalid_codes:
+                    print(f"[WARNING] Found {len(invalid_codes)} invalid codes in sample:")
+                    for code, error in invalid_codes[:3]:  # Show first 3 errors
+                        print(f"  {code}: {error}")
+                    if len(invalid_codes) > 3:
+                        print(f"  ... and {len(invalid_codes) - 3} more")
+                    print("  (Codes will be normalized during loading)")
+                else:
+                    print("[OK] ТНВЭД codes format validation passed")
+            else:
+                print("[WARNING] No 'Code' column found for validation")
+        except Exception as e:
+            print(f"[WARNING] Could not validate codes: {e}")
+        
+        print()
+    
     if not args.quiet:
         print(f"Excel file:      {args.excel_file}")
         print(f"Database path:   {config.database.path}")
@@ -244,6 +302,9 @@ def main():
         print(f"Batch size:      {config.processing.batch_size}")
         print(f"Model:           {config.model.name}")
         print(f"Device:          {config.model.device}")
+        print(f"Source type:     {args.source_type}")
+        if args.source_name:
+            print(f"Source name:     {args.source_name}")
         print()
     
     # Dry run mode
@@ -267,14 +328,25 @@ def main():
             device=config.model.device
         )
         
-        logger.info("Initializing TNVEDLoader")
-        loader = TNVEDLoader(
-            db_path=config.database.path,
-            normalizer=normalizer,
-            embedder=embedder,
-            batch_size=config.processing.batch_size,
-            collection_name=config.database.collection_name
-        )
+        # Initialize appropriate loader based on source type
+        if args.source_type == "product":
+            logger.info("Initializing ProductLoader for product data")
+            loader = ProductLoader(
+                db_path=config.database.path,
+                normalizer=normalizer,
+                embedder=embedder,
+                batch_size=config.processing.batch_size,
+                collection_name=config.database.collection_name
+            )
+        else:
+            logger.info("Initializing TNVEDLoader for reference data")
+            loader = TNVEDLoader(
+                db_path=config.database.path,
+                normalizer=normalizer,
+                embedder=embedder,
+                batch_size=config.processing.batch_size,
+                collection_name=config.database.collection_name
+            )
         
         if not args.quiet:
             print("[OK] Components initialized")
@@ -282,10 +354,18 @@ def main():
         
         # Check current database state
         current_count = loader.get_record_count()
+        current_stats = loader.get_statistics_by_source_type()
         logger.info(f"Current database contains {current_count} records")
         
         if not args.quiet:
             print(f"Current database: {current_count} records")
+            if current_stats["reference"] > 0 or current_stats["product"] > 0:
+                print(f"  Reference records: {current_stats['reference']}")
+                print(f"  Product records:   {current_stats['product']}")
+                if current_stats["legacy"] > 0:
+                    print(f"  Legacy records:    {current_stats['legacy']} (will be migrated)")
+            else:
+                print("  (Database is empty)")
         
         # Reset database if requested
         if args.reset:
@@ -311,12 +391,18 @@ def main():
         start_time = time.time()
         
         logger.info(f"Starting data load from {args.excel_file}")
-        total_loaded = loader.load_from_excel(args.excel_file)
+        
+        # Load data using appropriate method based on source type
+        if args.source_type == "product":
+            total_loaded = loader.load_from_excel(args.excel_file, args.source_name)
+        else:
+            total_loaded = loader.load_from_excel(args.excel_file)
         
         elapsed_time = time.time() - start_time
         
-        # Get final count
+        # Get final count and statistics
         final_count = loader.get_record_count()
+        final_stats = loader.get_statistics_by_source_type()
         
         # Print results
         if not args.quiet:
@@ -326,6 +412,10 @@ def main():
             print("=" * 70)
             print(f"Records loaded:  {total_loaded}")
             print(f"Total records:   {final_count}")
+            print(f"  Reference records: {final_stats['reference']}")
+            print(f"  Product records:   {final_stats['product']}")
+            if final_stats["legacy"] > 0:
+                print(f"  Legacy records:    {final_stats['legacy']} (need migration)")
             print(f"Time elapsed:    {elapsed_time:.2f} seconds")
             
             if total_loaded > 0:

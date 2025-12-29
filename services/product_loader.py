@@ -7,7 +7,7 @@ from Excel files into ChromaDB vector database with text normalization and embed
 
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict
 
 import pandas as pd
 import numpy as np
@@ -16,6 +16,7 @@ from models.product_record import ProductRecord
 from services.text_normalizer import TextNormalizer
 from services.embedding_generator import EmbeddingGenerator
 from services.chroma_manager import ChromaDBManager
+from utils.tnved_validator import validate_tnved_code, TNVEDValidationError
 
 
 logger = logging.getLogger(__name__)
@@ -171,8 +172,29 @@ class ProductLoader:
         df["Code"] = df["Code"].astype(str)
         df["TextEx"] = df["TextEx"].astype(str)
         
-        # Normalize ТНВЭД codes to 10 digits (pad with leading zeros if needed)
-        df["Code"] = df["Code"].str.zfill(10)
+        # Validate and normalize ТНВЭД codes
+        logger.info("Validating and normalizing ТНВЭД codes")
+        invalid_codes = []
+        normalized_codes = []
+        
+        for idx, code in enumerate(df["Code"]):
+            try:
+                normalized_code = validate_tnved_code(code, strict=False)
+                normalized_codes.append(normalized_code)
+            except (TNVEDValidationError, ValueError) as e:
+                logger.warning(f"Invalid ТНВЭД code at row {idx + 1}: '{code}' - {e}")
+                invalid_codes.append((idx, code, str(e)))
+                # Use the original code padded to 10 digits as fallback
+                normalized_codes.append(str(code).zfill(10))
+        
+        df["Code"] = normalized_codes
+        
+        if invalid_codes:
+            logger.warning(f"Found {len(invalid_codes)} invalid ТНВЭД codes (using fallback normalization)")
+            # Log first few invalid codes for debugging
+            for idx, code, error in invalid_codes[:5]:
+                logger.debug(f"Row {idx + 1}: '{code}' - {error}")
+        
         logger.info(f"Normalized {len(df)} codes to 10-digit format")
         
         # Process data in batches
@@ -372,6 +394,15 @@ class ProductLoader:
             Number of records in ChromaDB collection
         """
         return self.db_manager.count()
+    
+    def get_statistics_by_source_type(self) -> Dict[str, int]:
+        """
+        Get record counts by source type.
+        
+        Returns:
+            Dictionary with counts for each source type
+        """
+        return self.db_manager.get_statistics_by_source_type()
     
     def validate_source_information(self, source_name: str, source_id: Optional[str] = None) -> bool:
         """

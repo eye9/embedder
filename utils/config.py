@@ -21,6 +21,7 @@ class DatabaseConfig:
     """Database configuration"""
     path: str = "./chroma_db"
     collection_name: str = "tnved"
+    default_source_name: str = "unknown"
 
 
 @dataclass
@@ -33,6 +34,9 @@ class ProcessingConfig:
 class SearchConfig:
     """Search configuration"""
     default_top_k: int = 5
+    group_by_code: bool = False
+    prioritize_reference: bool = True
+    show_source_info: bool = True
 
 
 @dataclass
@@ -105,6 +109,36 @@ class LangChainConfig:
 
 
 @dataclass
+class ReferenceSourceConfig:
+    """Reference source configuration"""
+    name: str = "tnved_official"
+    display_name: str = "Официальный справочник ТНВЭД"
+
+
+@dataclass
+class ProductSourceConfig:
+    """Product source configuration"""
+    default_name: str = "unknown_products"
+    display_name: str = "Товары с подобранными кодами"
+
+
+@dataclass
+class SourcesConfig:
+    """Sources configuration"""
+    reference: ReferenceSourceConfig = field(default_factory=ReferenceSourceConfig)
+    product: ProductSourceConfig = field(default_factory=ProductSourceConfig)
+
+
+@dataclass
+class DisplayConfig:
+    """Display configuration"""
+    source_format: str = "detailed"  # Options: "detailed", "compact", "minimal"
+    show_source_id: bool = True
+    show_similarity_score: bool = True
+    max_description_length: int = 100
+
+
+@dataclass
 class Config:
     """Main configuration class for ТНВЭД Embedder System"""
     model: ModelConfig = field(default_factory=ModelConfig)
@@ -115,6 +149,8 @@ class Config:
     api: APIConfig = field(default_factory=APIConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
     langchain: LangChainConfig = field(default_factory=LangChainConfig)
+    sources: SourcesConfig = field(default_factory=SourcesConfig)
+    display: DisplayConfig = field(default_factory=DisplayConfig)
 
     @classmethod
     def from_file(cls, path: str) -> "Config":
@@ -167,6 +203,8 @@ class Config:
             config.database.path = db_path
         if collection_name := os.getenv("TNVED_COLLECTION_NAME"):
             config.database.collection_name = collection_name
+        if default_source_name := os.getenv("TNVED_DEFAULT_SOURCE_NAME"):
+            config.database.default_source_name = default_source_name
         
         # Processing configuration
         if batch_size := os.getenv("TNVED_BATCH_SIZE"):
@@ -181,6 +219,12 @@ class Config:
                 config.search.default_top_k = int(top_k)
             except ValueError:
                 pass  # Use default value
+        if group_by_code := os.getenv("TNVED_GROUP_BY_CODE"):
+            config.search.group_by_code = group_by_code.lower() in ("true", "1", "yes")
+        if prioritize_reference := os.getenv("TNVED_PRIORITIZE_REFERENCE"):
+            config.search.prioritize_reference = prioritize_reference.lower() in ("true", "1", "yes")
+        if show_source_info := os.getenv("TNVED_SHOW_SOURCE_INFO"):
+            config.search.show_source_info = show_source_info.lower() in ("true", "1", "yes")
         
         # Logging configuration
         if log_level := os.getenv("TNVED_LOG_LEVEL"):
@@ -229,6 +273,8 @@ class Config:
                 config.database.path = db_data["path"]
             if "collection_name" in db_data:
                 config.database.collection_name = db_data["collection_name"]
+            if "default_source_name" in db_data:
+                config.database.default_source_name = db_data["default_source_name"]
         
         # Processing configuration
         if "processing" in data:
@@ -241,6 +287,12 @@ class Config:
             search_data = data["search"]
             if "default_top_k" in search_data:
                 config.search.default_top_k = search_data["default_top_k"]
+            if "group_by_code" in search_data:
+                config.search.group_by_code = search_data["group_by_code"]
+            if "prioritize_reference" in search_data:
+                config.search.prioritize_reference = search_data["prioritize_reference"]
+            if "show_source_info" in search_data:
+                config.search.show_source_info = search_data["show_source_info"]
         
         # Logging configuration
         if "logging" in data:
@@ -316,6 +368,38 @@ class Config:
             if "tools" in lc_data:
                 config.langchain.tools = lc_data["tools"]
         
+        # Sources configuration
+        if "sources" in data:
+            sources_data = data["sources"]
+            
+            # Reference source configuration
+            if "reference" in sources_data:
+                ref_data = sources_data["reference"]
+                if "name" in ref_data:
+                    config.sources.reference.name = ref_data["name"]
+                if "display_name" in ref_data:
+                    config.sources.reference.display_name = ref_data["display_name"]
+            
+            # Product source configuration
+            if "product" in sources_data:
+                prod_data = sources_data["product"]
+                if "default_name" in prod_data:
+                    config.sources.product.default_name = prod_data["default_name"]
+                if "display_name" in prod_data:
+                    config.sources.product.display_name = prod_data["display_name"]
+        
+        # Display configuration
+        if "display" in data:
+            display_data = data["display"]
+            if "source_format" in display_data:
+                config.display.source_format = display_data["source_format"]
+            if "show_source_id" in display_data:
+                config.display.show_source_id = display_data["show_source_id"]
+            if "show_similarity_score" in display_data:
+                config.display.show_similarity_score = display_data["show_similarity_score"]
+            if "max_description_length" in display_data:
+                config.display.max_description_length = display_data["max_description_length"]
+        
         return config
 
     def validate(self) -> None:
@@ -345,3 +429,20 @@ class Config:
         # Validate API port
         if not (1 <= self.api.port <= 65535):
             raise ValueError(f"Invalid API port: {self.api.port}. Must be between 1 and 65535")
+        
+        # Validate display format
+        valid_formats = ("detailed", "compact", "minimal")
+        if self.display.source_format not in valid_formats:
+            raise ValueError(f"Invalid source_format: {self.display.source_format}. Must be one of {valid_formats}")
+        
+        # Validate max description length
+        if self.display.max_description_length <= 0:
+            raise ValueError(f"Invalid max_description_length: {self.display.max_description_length}. Must be positive")
+        
+        # Validate source names are not empty
+        if not self.sources.reference.name.strip():
+            raise ValueError("Reference source name cannot be empty")
+        if not self.sources.product.default_name.strip():
+            raise ValueError("Product default source name cannot be empty")
+        if not self.database.default_source_name.strip():
+            raise ValueError("Database default source name cannot be empty")

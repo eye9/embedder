@@ -123,8 +123,8 @@ This implementation plan extends the existing ТНВЭД Embedder System to supp
     - **Property 14: Referential Integrity**
     - **Validates: Requirements 5.3**
 
-- [-] 7. Enhance CLI scripts
-  - [-] 7.1 Extend load_tnved.py with product support
+- [x] 7. Enhance CLI scripts
+  - [x] 7.1 Extend load_tnved.py with product support
     - Add --source-type parameter for loading mode selection
     - Add --source-name parameter for source identification
     - Maintain backward compatibility with existing parameters
@@ -134,7 +134,7 @@ This implementation plan extends the existing ТНВЭД Embedder System to supp
     - **Property 11: CLI Parameter Propagation**
     - **Validates: Requirements 4.1, 4.2**
 
-  - [ ] 7.3 Add enhanced statistics display
+  - [x] 7.3 Add enhanced statistics display
     - Show separate counts for reference vs product records
     - Display source information in loading summary
     - _Requirements: 4.3_
@@ -143,12 +143,12 @@ This implementation plan extends the existing ТНВЭД Embedder System to supp
     - **Property 12: Statistics Display**
     - **Validates: Requirements 4.3**
 
-  - [ ] 7.5 Extend search_tnved.py with filtering support
+  - [x] 7.5 Extend search_tnved.py with filtering support
     - Add --source-filter parameter for result filtering
     - Enhance result display to show source information
     - _Requirements: 4.4, 4.5_
 
-  - [ ] 7.6 Add code format validation
+  - [x] 7.6 Add code format validation
     - Implement ТНВЭД code format validation
     - Add validation to both loading and search operations
     - _Requirements: 5.1_
@@ -157,14 +157,14 @@ This implementation plan extends the existing ТНВЭД Embedder System to supp
     - **Property 13: Code Format Validation**
     - **Validates: Requirements 5.1**
 
-- [ ] 8. Configuration system enhancements
-  - [ ] 8.1 Extend config.yaml with new options
+- [x] 8. Configuration system enhancements
+  - [x] 8.1 Extend config.yaml with new options
     - Add source configuration section
     - Add search behavior preferences
     - Add display format options
     - _Requirements: 6.1, 6.2, 6.3, 6.4_
 
-  - [ ] 8.2 Update Config class to handle new settings
+  - [x] 8.2 Update Config class to handle new settings
     - Add validation for new configuration options
     - Implement default value handling
     - _Requirements: 6.2_
@@ -188,8 +188,8 @@ This implementation plan extends the existing ТНВЭД Embedder System to supp
     - Validate that old commands work unchanged
     - _Requirements: 7.1, 7.4_
 
-- [ ] 10. Integration and final testing
-  - [ ] 10.1 Integration testing
+- [-] 10. Integration and final testing
+  - [x] 10.1 Integration testing
     - Test complete workflows: load product data → search → verify results
     - Test mixed data scenarios (reference + product records)
     - Validate performance with large datasets

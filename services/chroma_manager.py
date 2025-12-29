@@ -345,6 +345,49 @@ class ChromaDBManager:
         """
         return self.collection.count()
     
+    def get_statistics_by_source_type(self) -> Dict[str, int]:
+        """
+        Get record counts by source type
+        
+        Returns:
+            Dictionary with counts for each source type
+        """
+        try:
+            # Get reference records count
+            ref_results = self.collection.get(
+                where={"source_type": "reference"},
+                include=["metadatas"]
+            )
+            reference_count = len(ref_results["ids"])
+            
+            # Get product records count
+            prod_results = self.collection.get(
+                where={"source_type": "product"},
+                include=["metadatas"]
+            )
+            product_count = len(prod_results["ids"])
+            
+            # Get total count
+            total_count = self.count()
+            
+            # Calculate legacy records (records without source_type)
+            legacy_count = total_count - reference_count - product_count
+            
+            return {
+                "reference": reference_count,
+                "product": product_count,
+                "legacy": legacy_count,
+                "total": total_count
+            }
+        except Exception as e:
+            logger.error(f"Error getting statistics by source type: {e}")
+            return {
+                "reference": 0,
+                "product": 0,
+                "legacy": 0,
+                "total": self.count()
+            }
+    
     def delete_collection(self) -> None:
         """
         Delete the entire collection

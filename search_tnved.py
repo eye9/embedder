@@ -34,8 +34,10 @@ from pathlib import Path
 
 from services import TextNormalizer, EmbeddingGenerator, TNVEDSearcher
 from services.tnved_searcher import SearchError
+from services.enhanced_searcher import EnhancedSearcher
 from utils.config import Config
 from utils.logger import setup_logging, get_logger
+from utils.tnved_validator import validate_tnved_code, TNVEDValidationError
 
 
 def parse_arguments():
@@ -53,6 +55,8 @@ Examples:
   %(prog)s "кофейные зерна арабика"
   %(prog)s "зеленый чай" --top-k 10
   %(prog)s "сахар белый" --config config.yaml
+  %(prog)s "кофе" --source-filter reference
+  %(prog)s "товары" --source-filter product
   %(prog)s --code 0901110000
   %(prog)s --interactive
         """
@@ -74,6 +78,14 @@ Examples:
         type=int,
         default=None,
         help="Number of top results to return (default: 5)"
+    )
+    
+    parser.add_argument(
+        "--source-filter",
+        type=str,
+        choices=["reference", "product"],
+        default=None,
+        help="Filter results by source type: reference (official ТНВЭД) or product (real products with codes)"
     )
     
     # Code lookup mode
@@ -252,6 +264,11 @@ def format_results_table(results, show_normalized=False):
         print(f"{i}. Code: {result.code}")
         print(f"   Similarity: {result.similarity_score:.4f}")
         print(f"   Description: {result.description}")
+        print(f"   Source: {result.source_type}")
+        if result.source_name:
+            print(f"   Source Name: {result.source_name}")
+        if result.source_id:
+            print(f"   Source ID: {result.source_id}")
         
         if show_normalized:
             print(f"   Normalized: {result.normalized_text}")
@@ -273,7 +290,10 @@ def format_results_json(results):
             "code": r.code,
             "description": r.description,
             "normalized_text": r.normalized_text,
-            "similarity_score": r.similarity_score
+            "similarity_score": r.similarity_score,
+            "source_type": r.source_type,
+            "source_name": r.source_name,
+            "source_id": r.source_id
         }
         for r in results
     ]
@@ -289,7 +309,10 @@ def format_results_simple(results):
         results: List of SearchResult objects
     """
     for result in results:
-        print(f"{result.code}\t{result.similarity_score:.4f}\t{result.description}")
+        source_info = f"[{result.source_type}]"
+        if result.source_name:
+            source_info += f" {result.source_name}"
+        print(f"{result.code}\t{result.similarity_score:.4f}\t{source_info}\t{result.description}")
 
 
 def perform_search(searcher, query, top_k, args):
@@ -297,7 +320,7 @@ def perform_search(searcher, query, top_k, args):
     Perform a search and display results.
     
     Args:
-        searcher: TNVEDSearcher instance
+        searcher: EnhancedSearcher instance
         query: Search query text
         top_k: Number of results to return
         args: Command-line arguments
@@ -306,9 +329,11 @@ def perform_search(searcher, query, top_k, args):
         if not args.quiet and args.format == "table":
             print(f"\nSearching for: '{query}'")
             print(f"Top-k: {top_k}")
+            if args.source_filter:
+                print(f"Source filter: {args.source_filter}")
         
-        # Perform search
-        results = searcher.search(query, top_k=top_k)
+        # Perform search with source filter
+        results = searcher.search(query, top_k=top_k, source_filter=args.source_filter)
         
         # Format and display results
         if args.format == "table":
@@ -329,41 +354,56 @@ def lookup_code(searcher, code, args):
     Look up details for a specific code.
     
     Args:
-        searcher: TNVEDSearcher instance
+        searcher: EnhancedSearcher instance
         code: ТНВЭД code to look up
         args: Command-line arguments
     """
     try:
+        # Validate and normalize the code
+        try:
+            normalized_code = validate_tnved_code(code, strict=False)
+            if normalized_code != code:
+                if not args.quiet and args.format == "table":
+                    print(f"[INFO] Code normalized: '{code}' -> '{normalized_code}'")
+            code = normalized_code
+        except (TNVEDValidationError, ValueError) as e:
+            print(f"[ERROR] Invalid ТНВЭД code format: {e}", file=sys.stderr)
+            sys.exit(1)
+        
         if not args.quiet and args.format == "table":
             print(f"\nLooking up code: {code}")
         
-        result = searcher.get_code_details(code)
+        # Get all records for this code
+        results = searcher.get_all_records_for_code(code)
         
-        if result:
+        if results:
             if args.format == "table":
                 print()
                 print("=" * 100)
                 print("Code Details")
                 print("=" * 100)
                 print()
-                print(f"Code: {result.code}")
-                print(f"Description: {result.description}")
-                
-                if args.show_normalized:
-                    print(f"Normalized: {result.normalized_text}")
-                
-                print()
+                for i, result in enumerate(results, 1):
+                    print(f"{i}. Code: {result.code}")
+                    print(f"   Description: {result.description}")
+                    print(f"   Source: {result.source_type}")
+                    if result.source_name:
+                        print(f"   Source Name: {result.source_name}")
+                    if result.source_id:
+                        print(f"   Source ID: {result.source_id}")
+                    
+                    if args.show_normalized:
+                        print(f"   Normalized: {result.normalized_text}")
+                    
+                    print()
             elif args.format == "json":
-                format_results_json([result])
+                format_results_json(results)
             elif args.format == "simple":
-                format_results_simple([result])
+                format_results_simple(results)
         else:
             print(f"[ERROR] Code not found: {code}", file=sys.stderr)
             sys.exit(1)
         
-    except ValueError as e:
-        print(f"[ERROR] Invalid code: {e}", file=sys.stderr)
-        sys.exit(1)
     except Exception as e:
         print(f"[ERROR] Unexpected error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -374,7 +414,7 @@ def interactive_mode(searcher, top_k, args):
     Enter interactive search mode.
     
     Args:
-        searcher: TNVEDSearcher instance
+        searcher: EnhancedSearcher instance
         top_k: Default number of results
         args: Command-line arguments
     """
@@ -387,15 +427,21 @@ def interactive_mode(searcher, top_k, args):
     print("  - Type a description to search")
     print("  - Type 'code:<code>' to look up a specific code")
     print("  - Type 'top-k:<n>' to change number of results")
+    print("  - Type 'filter:<type>' to set source filter (reference/product/none)")
     print("  - Type 'quit' or 'exit' to exit")
     print()
     
     current_top_k = top_k
+    current_filter = args.source_filter
     
     while True:
         try:
+            # Show current settings in prompt
+            filter_text = f" [filter: {current_filter}]" if current_filter else ""
+            prompt = f"Search{filter_text}> "
+            
             # Get user input
-            query = input("Search> ").strip()
+            query = input(prompt).strip()
             
             if not query:
                 continue
@@ -407,7 +453,14 @@ def interactive_mode(searcher, top_k, args):
             
             elif query.lower().startswith("code:"):
                 code = query[5:].strip()
-                lookup_code(searcher, code, args)
+                # Validate the code before lookup
+                try:
+                    normalized_code = validate_tnved_code(code, strict=False)
+                    if normalized_code != code:
+                        print(f"[INFO] Code normalized: '{code}' -> '{normalized_code}'")
+                    lookup_code(searcher, normalized_code, args)
+                except (TNVEDValidationError, ValueError) as e:
+                    print(f"[ERROR] Invalid ТНВЭД code format: {e}", file=sys.stderr)
             
             elif query.lower().startswith("top-k:"):
                 try:
@@ -420,9 +473,24 @@ def interactive_mode(searcher, top_k, args):
                 except ValueError:
                     print("[ERROR] Invalid top-k value", file=sys.stderr)
             
+            elif query.lower().startswith("filter:"):
+                filter_value = query[7:].strip().lower()
+                if filter_value == "none":
+                    current_filter = None
+                    print("[OK] Source filter cleared")
+                elif filter_value in ["reference", "product"]:
+                    current_filter = filter_value
+                    print(f"[OK] Source filter set to {current_filter}")
+                else:
+                    print("[ERROR] Invalid filter. Use 'reference', 'product', or 'none'", file=sys.stderr)
+            
             else:
-                # Perform search
+                # Perform search with current filter
+                # Temporarily update args.source_filter
+                original_filter = args.source_filter
+                args.source_filter = current_filter
                 perform_search(searcher, query, current_top_k, args)
+                args.source_filter = original_filter
         
         except KeyboardInterrupt:
             print("\n\nGoodbye!")
@@ -475,8 +543,8 @@ def main():
             device=config.model.device
         )
         
-        logger.info("Initializing TNVEDSearcher")
-        searcher = TNVEDSearcher(
+        logger.info("Initializing EnhancedSearcher")
+        searcher = EnhancedSearcher(
             db_path=config.database.path,
             normalizer=normalizer,
             embedder=embedder,
@@ -494,6 +562,10 @@ def main():
         if not args.quiet and args.format == "table":
             print(f"[OK] Components initialized")
             print(f"  Database: {stats['total_records']} records")
+            print(f"    Reference: {stats['reference_records']}")
+            print(f"    Product: {stats['product_records']}")
+            if args.source_filter:
+                print(f"  Source filter: {args.source_filter}")
         
         # Determine top-k
         top_k = args.top_k if args.top_k else config.search.default_top_k
