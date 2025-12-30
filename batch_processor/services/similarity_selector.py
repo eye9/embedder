@@ -14,6 +14,7 @@ from batch_processor.services.tnved_selector import (
     create_processing_result_with_error,
     measure_processing_time
 )
+from batch_processor.services.tnved_code_utils import get_tnved_code_from_search_result
 from services.tnved_searcher import TNVEDSearcher, SearchError
 
 
@@ -125,11 +126,27 @@ class SimilarityTop1Selector(TNVEDSelector):
             # Select the top result (highest similarity score)
             top_result = search_results[0]
             
+            # Extract clean TNVED code (remove sequence numbers like _003)
+            clean_tnved_code = get_tnved_code_from_search_result(top_result)
+            
+            if not clean_tnved_code:
+                return ProcessingResult(
+                    row_index=row_index,
+                    original_description=description,
+                    tnved_code=None,
+                    selection_reason=(
+                        f"Found result {top_result.code} but could not extract valid TNVED code. "
+                        "TNVED codes must be exactly 10 digits."
+                    ),
+                    confidence_score=top_result.similarity_score
+                )
+            
             # Format selection reason with detailed information
             selection_reason = self._format_selection_reason(
                 top_result, 
                 search_results,
-                description
+                description,
+                clean_tnved_code
             )
             
             # Determine confidence level
@@ -142,7 +159,7 @@ class SimilarityTop1Selector(TNVEDSelector):
             return ProcessingResult(
                 row_index=row_index,
                 original_description=description,
-                tnved_code=top_result.code,
+                tnved_code=clean_tnved_code,  # Use clean code instead of database identifier
                 selection_reason=selection_reason,
                 confidence_score=confidence_score
             )
@@ -169,7 +186,8 @@ class SimilarityTop1Selector(TNVEDSelector):
         self, 
         top_result, 
         all_results, 
-        original_description: str
+        original_description: str,
+        clean_tnved_code: str
     ) -> str:
         """
         Format detailed selection reasoning.
@@ -181,17 +199,22 @@ class SimilarityTop1Selector(TNVEDSelector):
             top_result: The selected search result
             all_results: All search results for context
             original_description: Original product description
+            clean_tnved_code: Clean 10-digit TNVED code
             
         Returns:
             Formatted selection reason string
         """
         # Basic selection information
         reason_parts = [
-            f"Code: {top_result.code}",
+            f"Code: {clean_tnved_code}",  # Use clean code in reason
             f"Similarity Score: {top_result.similarity_score:.3f}",
             f"Source: {top_result.source_name or 'TNVED Database'}",
             f"Description: {top_result.description[:200]}..."
         ]
+        
+        # Add database identifier for reference if different from clean code
+        if top_result.code != clean_tnved_code:
+            reason_parts.append(f"DB ID: {top_result.code}")
         
         # Add quality assessment
         if top_result.similarity_score >= self.confidence_threshold:
@@ -207,8 +230,12 @@ class SimilarityTop1Selector(TNVEDSelector):
             score_difference = top_result.similarity_score - second_best.similarity_score
             
             if score_difference < 0.05:  # Very close scores
+                # Extract clean code for second best result too
+                from batch_processor.services.tnved_code_utils import get_tnved_code_from_search_result
+                second_clean_code = get_tnved_code_from_search_result(second_best)
+                
                 reason_parts.append(
-                    f"Note: Close competition with {second_best.code} "
+                    f"Note: Close competition with {second_clean_code or second_best.code} "
                     f"(score: {second_best.similarity_score:.3f}). "
                     f"Manual review may be beneficial."
                 )

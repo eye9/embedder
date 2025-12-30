@@ -14,6 +14,7 @@ from fastapi.security import HTTPBasicCredentials, HTTPBasic
 import secrets
 
 from ..config.settings import get_config
+from ..services.logging_service import get_structured_logger
 
 
 class SessionManager:
@@ -23,6 +24,7 @@ class SessionManager:
         self._sessions: Dict[str, Dict[str, Any]] = {}
         self._session_files: Dict[str, List[str]] = {}  # Track files per session
         self.security = HTTPBasic()
+        self.structured_logger = get_structured_logger(__name__)
     
     def create_session(self, username: str) -> str:
         """
@@ -179,7 +181,18 @@ class SessionManager:
                 credentials.password.encode("utf-8"),
                 config.auth.users[credentials.username].encode("utf-8")
             )):
+            # Log successful authentication
+            self.structured_logger.log_authentication(
+                user=credentials.username,
+                success=True
+            )
             return credentials.username
+        
+        # Log failed authentication
+        self.structured_logger.log_authentication(
+            user=credentials.username,
+            success=False
+        )
         
         raise HTTPException(
             status_code=401,

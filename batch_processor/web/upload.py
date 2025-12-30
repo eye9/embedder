@@ -7,6 +7,7 @@ task creation, and session management.
 
 import os
 import uuid
+import time
 import logging
 from pathlib import Path
 from typing import Optional, Tuple
@@ -16,12 +17,17 @@ from fastapi.responses import JSONResponse
 from ..config.settings import get_config, ProcessingMode, AlgorithmType
 from ..services.excel_processor import ExcelProcessor
 from ..services.file_manager import FileManager
+from ..services.monitoring import get_metrics_collector
+from ..services.logging_service import get_structured_logger
 from ..workers.celery_app import celery_app
 from .auth import require_auth
 from .models import ProcessingRequest, UploadResponse, ValidationResult, ErrorResponse
 
 
 logger = logging.getLogger(__name__)
+
+# Initialize structured logger
+structured_logger = get_structured_logger(__name__)
 
 # Create router for upload endpoints
 router = APIRouter(prefix="/upload", tags=["upload"])
@@ -142,7 +148,30 @@ async def upload_file(
     This endpoint accepts an Excel file upload, validates it, and creates
     a background processing task. Returns task information for tracking.
     """
+    start_time = time.time()
+    
     try:
+        # Log file upload start
+        structured_logger.log_file_upload(
+            user=user,
+            session_id="",  # Will be updated after session creation
+            filename=file.filename,
+            file_size=0,  # Will be updated after file save
+            success=False  # Will be updated at the end
+        )
+        
+        # Validate file format and basic properties
+        is_valid, error_msg, file_info = validate_uploaded_file(file)
+        if not is_valid:
+            structured_logger.log_file_upload(
+                user=user,
+                session_id="",
+                filename=file.filename,
+                file_size=0,
+                success=False,
+                error_message=error_msg
+            )
+            raise HTTPException(status_code=400, detail=error_msg)
         # Validate file format and basic properties
         is_valid, error_msg, file_info = validate_uploaded_file(file)
         if not is_valid:
@@ -154,7 +183,17 @@ async def upload_file(
         
         # Save uploaded file
         file_path = await file_manager.save_uploaded_file(session_id, file)
+        file_size = file_path.stat().st_size
         logger.info(f"File uploaded: {file_path} for user: {user}")
+        
+        # Log successful file upload
+        structured_logger.log_file_upload(
+            user=user,
+            session_id=session_id,
+            filename=file.filename,
+            file_size=file_size,
+            success=True
+        )
         
         # Validate Excel content
         validation_result = await validate_excel_content(file_path)
@@ -192,7 +231,7 @@ async def upload_file(
                 task_id=task_id,
                 session_id=session_id,
                 filename=file.filename,
-                file_size=file_info.get("file_size", 0),
+                file_size=file_size,
                 total_rows=validation_result.total_rows,
                 rows_to_process=rows_to_process,
                 processing_mode=process_mode,
@@ -232,7 +271,7 @@ async def upload_file(
                     task_id=task_id,
                     session_id=session_id,
                     filename=file.filename,
-                    file_size=file_info.get("file_size", 0),
+                    file_size=file_size,
                     total_rows=validation_result.total_rows,
                     rows_to_process=rows_to_process,
                     processing_mode=process_mode,
@@ -253,6 +292,11 @@ async def upload_file(
         raise
     except Exception as e:
         logger.error(f"Error uploading file: {e}", exc_info=True)
+        structured_logger.log_error(e, {
+            "user": user,
+            "filename": file.filename if file else "unknown",
+            "endpoint": "/upload"
+        })
         raise HTTPException(
             status_code=500,
             detail=f"Failed to upload file: {str(e)}"

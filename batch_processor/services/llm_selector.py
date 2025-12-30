@@ -19,6 +19,7 @@ from batch_processor.services.tnved_selector import (
     measure_processing_time
 )
 from batch_processor.services.similarity_selector import SimilarityTop1Selector
+from batch_processor.services.tnved_code_utils import get_tnved_code_from_search_result
 from services.tnved_searcher import TNVEDSearcher, SearchError
 from models.search_result import SearchResult
 
@@ -221,7 +222,8 @@ class LLMReasoningSelector(TNVEDSelector):
         llm_provider: Optional[LLMProvider] = None,
         top_k: int = 5,
         openai_api_key: Optional[str] = None,
-        openai_model: str = "gpt-3.5-turbo"
+        openai_model: str = "gpt-3.5-turbo",
+        **kwargs  # Accept additional parameters for compatibility
     ):
         """
         Initialize LLM-based selector.
@@ -322,9 +324,9 @@ class LLMReasoningSelector(TNVEDSelector):
                 reasoning = llm_result.get("reasoning", "LLM analysis completed")
                 confidence_level = llm_result.get("confidence", "medium")
                 
-                # Validate that selected code is in search results
+                # Extract clean TNVED code from selected result
                 if selected_code:
-                    # Find the selected result to get similarity score
+                    # Find the selected result to get similarity score and extract clean code
                     selected_result = None
                     for result in search_results:
                         if result.code == selected_code:
@@ -332,26 +334,36 @@ class LLMReasoningSelector(TNVEDSelector):
                             break
                     
                     if selected_result:
-                        # Format detailed reasoning
-                        selection_reason = self._format_llm_reasoning(
-                            selected_result,
-                            reasoning,
-                            confidence_level,
-                            search_results
-                        )
+                        # Extract clean TNVED code
+                        clean_tnved_code = get_tnved_code_from_search_result(selected_result)
                         
-                        logger.debug(
-                            f"LLM selected code {selected_code} with "
-                            f"confidence {confidence_level}"
-                        )
-                        
-                        return ProcessingResult(
-                            row_index=row_index,
-                            original_description=description,
-                            tnved_code=selected_code,
-                            selection_reason=selection_reason,
-                            confidence_score=selected_result.similarity_score
-                        )
+                        if not clean_tnved_code:
+                            logger.warning(
+                                f"LLM selected {selected_code} but could not extract valid TNVED code, "
+                                "falling back to similarity_top1"
+                            )
+                        else:
+                            # Format detailed reasoning
+                            selection_reason = self._format_llm_reasoning(
+                                selected_result,
+                                reasoning,
+                                confidence_level,
+                                search_results,
+                                clean_tnved_code
+                            )
+                            
+                            logger.debug(
+                                f"LLM selected code {clean_tnved_code} (from {selected_code}) with "
+                                f"confidence {confidence_level}"
+                            )
+                            
+                            return ProcessingResult(
+                                row_index=row_index,
+                                original_description=description,
+                                tnved_code=clean_tnved_code,  # Use clean code
+                                selection_reason=selection_reason,
+                                confidence_score=selected_result.similarity_score
+                            )
                 
                 # If we get here, LLM selection was invalid - fall back
                 logger.warning(
@@ -397,7 +409,8 @@ class LLMReasoningSelector(TNVEDSelector):
         selected_result: SearchResult,
         llm_reasoning: str,
         confidence_level: str,
-        all_results: List[SearchResult]
+        all_results: List[SearchResult],
+        clean_tnved_code: str
     ) -> str:
         """
         Format LLM reasoning with additional context.
@@ -407,25 +420,35 @@ class LLMReasoningSelector(TNVEDSelector):
             llm_reasoning: Reasoning provided by LLM
             confidence_level: Confidence level from LLM
             all_results: All search results for context
+            clean_tnved_code: Clean 10-digit TNVED code
             
         Returns:
             Formatted selection reason string
         """
         reason_parts = [
-            f"Code: {selected_result.code}",
+            f"Code: {clean_tnved_code}",  # Use clean code
             f"LLM Confidence: {confidence_level.title()}",
             f"Similarity Score: {selected_result.similarity_score:.3f}",
             f"Reasoning: {llm_reasoning}",
             f"Algorithm: llm_reasoning"
         ]
         
+        # Add database identifier for reference if different from clean code
+        if selected_result.code != clean_tnved_code:
+            reason_parts.insert(-1, f"DB ID: {selected_result.code}")
+        
         # Add information about alternatives considered
         if len(all_results) > 1:
-            other_codes = [r.code for r in all_results if r.code != selected_result.code]
+            from batch_processor.services.tnved_code_utils import get_tnved_code_from_search_result
+            other_codes = []
+            for r in all_results:
+                if r.code != selected_result.code:
+                    clean_code = get_tnved_code_from_search_result(r)
+                    if clean_code:
+                        other_codes.append(clean_code)
+            
             if other_codes:
-                reason_parts.append(
-                    f"Alternatives considered: {', '.join(other_codes[:3])}"
-                )
+                reason_parts.insert(-1, f"Alternatives considered: {', '.join(other_codes[:3])}")
         
         return " | ".join(reason_parts)
     

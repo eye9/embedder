@@ -18,11 +18,16 @@ from batch_processor.services.file_manager import FileManager
 from batch_processor.services.tnved_selector import SelectorFactory
 from batch_processor.services.progress_tracker import get_progress_tracker
 from batch_processor.services.tnved_integration import get_tnved_integration, TNVEDIntegrationError
+from batch_processor.services.monitoring import get_metrics_collector
+from batch_processor.services.logging_service import get_structured_logger
 from batch_processor.models.result import ProcessingResult
 from batch_processor.config.settings import get_config
 
 
 logger = logging.getLogger(__name__)
+
+# Initialize structured logger
+structured_logger = get_structured_logger(__name__)
 
 
 def process_file_sync(
@@ -50,6 +55,17 @@ def process_file_sync(
     logger.info(
         f"Starting synchronous processing: session={session_id}, "
         f"file={file_path}, mode={process_mode}, algorithm={algorithm}, user={user}"
+    )
+    
+    # Log processing start
+    structured_logger.log_processing_start(
+        task_id="sync_" + session_id,
+        session_id=session_id,
+        user=user,
+        filename=Path(file_path).name,
+        total_rows=0,  # Will be updated after validation
+        algorithm=algorithm,
+        process_mode=process_mode
     )
     
     start_time = time.time()
@@ -163,7 +179,8 @@ def process_file_sync(
                 df.loc[result.row_index, 'TNVED_Code'] = result.tnved_code or ''
                 df.loc[result.row_index, 'Selection_Reason'] = result.selection_reason
         
-        # Save the processed file
+        # Create session directory and save the processed file
+        session_dir = file_manager.create_session_directory(session_id)
         output_path = file_manager.save_processed_file(
             session_id,
             df,
@@ -175,6 +192,18 @@ def process_file_sync(
         processing_time = end_time - start_time
         
         logger.info(f"Synchronous processing completed in {processing_time:.2f} seconds")
+        
+        # Log processing completion
+        structured_logger.log_processing_complete(
+            task_id="sync_" + session_id,
+            session_id=session_id,
+            user=user,
+            success=True,
+            processed_rows=processed_count,
+            error_count=error_count,
+            duration_ms=processing_time * 1000,
+            output_file=str(output_path)
+        )
         
         return {
             "status": "completed",
@@ -190,6 +219,12 @@ def process_file_sync(
         
     except Exception as e:
         logger.error(f"Synchronous processing failed: {e}", exc_info=True)
+        structured_logger.log_error(e, {
+            "session_id": session_id,
+            "file_path": file_path,
+            "algorithm": algorithm,
+            "process_mode": process_mode
+        })
         return {
             "status": "failed",
             "error": str(e),
@@ -222,7 +257,8 @@ def _process_file_without_tnved(
         df['TNVED_Code'] = ''
         df['Selection_Reason'] = 'TNVED integration not available - manual assignment required'
         
-        # Save the processed file
+        # Create session directory and save the processed file
+        session_dir = file_manager.create_session_directory(session_id)
         output_path = file_manager.save_processed_file(
             session_id,
             df,
@@ -289,6 +325,7 @@ class ProcessingTask(Task):
         self.file_manager = None
         self.tnved_integration = None
         self.progress_tracker = None
+        self.metrics_collector = None
         self._config = None
     
     def _initialize_services(self):
@@ -302,6 +339,7 @@ class ProcessingTask(Task):
                 base_path=self._config.files.temp_dir
             )
             self.progress_tracker = get_progress_tracker()
+            self.metrics_collector = get_metrics_collector()
             
             # Initialize TNVED integration
             try:
@@ -340,6 +378,17 @@ class ProcessingTask(Task):
             f"file={file_path}, mode={process_mode}, algorithm={algorithm}"
         )
         
+        # Log processing start
+        structured_logger.log_processing_start(
+            task_id=self.request.id,
+            session_id=session_id,
+            user="celery_worker",  # Could be enhanced to track actual user
+            filename=Path(file_path).name,
+            total_rows=0,  # Will be updated after validation
+            algorithm=algorithm,
+            process_mode=process_mode
+        )
+        
         start_time = time.time()
         
         try:
@@ -372,6 +421,21 @@ class ProcessingTask(Task):
             
             total_rows = validation_result.total_rows
             logger.info(f"File validation successful: {total_rows} total rows")
+            
+            # Get file size for metrics
+            file_size = file_path_obj.stat().st_size
+            
+            # Start metrics tracking
+            self.metrics_collector.start_processing_metrics(
+                task_id=self.request.id,
+                session_id=session_id,
+                user="celery_worker",
+                file_size_bytes=file_size,
+                total_rows=total_rows,
+                algorithm=algorithm,
+                process_mode=process_mode,
+                chunk_size=self._config.processing.chunk_size
+            )
             
             # Get processing statistics
             stats = self.excel_processor.get_processing_statistics(
@@ -440,6 +504,24 @@ class ProcessingTask(Task):
                 "completion_summary": completion_summary
             }
             
+            # Complete metrics tracking
+            self.metrics_collector.complete_processing_metrics(
+                task_id=self.request.id,
+                success=True
+            )
+            
+            # Log processing completion
+            structured_logger.log_processing_complete(
+                task_id=self.request.id,
+                session_id=session_id,
+                user="celery_worker",
+                success=True,
+                processed_rows=len(results),
+                error_count=error_count,
+                duration_ms=processing_time * 1000,
+                output_file=str(output_path)
+            )
+            
             logger.info(
                 f"Processing completed successfully: {successful_count}/{len(results)} "
                 f"rows processed in {processing_time:.2f}s"
@@ -450,6 +532,23 @@ class ProcessingTask(Task):
         except Exception as e:
             error_msg = f"Processing task failed: {str(e)}"
             logger.error(error_msg, exc_info=True)
+            
+            # Complete metrics tracking with failure
+            if hasattr(self, 'metrics_collector') and self.metrics_collector:
+                self.metrics_collector.complete_processing_metrics(
+                    task_id=self.request.id,
+                    success=False,
+                    error_message=error_msg
+                )
+            
+            # Log processing failure
+            structured_logger.log_error(e, {
+                "task_id": self.request.id,
+                "session_id": session_id,
+                "file_path": file_path,
+                "algorithm": algorithm,
+                "process_mode": process_mode
+            })
             
             return {
                 "status": "failed",
