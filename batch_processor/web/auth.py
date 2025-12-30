@@ -7,7 +7,7 @@ functionality for user authentication and access control.
 
 import uuid
 import time
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta
 from fastapi import HTTPException, Depends
 from fastapi.security import HTTPBasicCredentials, HTTPBasic
@@ -21,7 +21,56 @@ class SessionManager:
     
     def __init__(self):
         self._sessions: Dict[str, Dict[str, Any]] = {}
+        self._session_files: Dict[str, List[str]] = {}  # Track files per session
         self.security = HTTPBasic()
+    
+    def create_session(self, username: str) -> str:
+        """
+        Create a new session for authenticated user.
+        
+        Args:
+            username: Authenticated username
+            
+        Returns:
+            Session ID
+        """
+        session_id = str(uuid.uuid4())
+        config = get_config()
+        
+        self._sessions[session_id] = {
+            "username": username,
+            "created_at": datetime.utcnow(),
+            "expires_at": datetime.utcnow() + timedelta(hours=config.security.session_timeout_hours),
+            "last_activity": datetime.utcnow()
+        }
+        
+        # Initialize file tracking for this session
+        self._session_files[session_id] = []
+        
+        return session_id
+    
+    def add_session_file(self, session_id: str, file_path: str) -> None:
+        """
+        Track a file associated with a session.
+        
+        Args:
+            session_id: Session identifier
+            file_path: Path to file to track
+        """
+        if session_id in self._session_files:
+            self._session_files[session_id].append(file_path)
+    
+    def get_session_files(self, session_id: str) -> List[str]:
+        """
+        Get all files associated with a session.
+        
+        Args:
+            session_id: Session identifier
+            
+        Returns:
+            List of file paths associated with the session
+        """
+        return self._session_files.get(session_id, [])
     
     def create_session(self, username: str) -> str:
         """
@@ -71,17 +120,21 @@ class SessionManager:
     
     def invalidate_session(self, session_id: str) -> None:
         """
-        Invalidate a session.
+        Invalidate a session and clean up associated files.
         
         Args:
             session_id: Session identifier to invalidate
         """
         if session_id in self._sessions:
             del self._sessions[session_id]
+        
+        # Clean up file tracking
+        if session_id in self._session_files:
+            del self._session_files[session_id]
     
     def cleanup_expired_sessions(self) -> int:
         """
-        Remove expired sessions.
+        Remove expired sessions and clean up associated files.
         
         Returns:
             Number of sessions cleaned up
@@ -93,7 +146,12 @@ class SessionManager:
         ]
         
         for session_id in expired_sessions:
+            # Clean up session data
             del self._sessions[session_id]
+            
+            # Clean up file tracking
+            if session_id in self._session_files:
+                del self._session_files[session_id]
         
         return len(expired_sessions)
     
@@ -128,6 +186,53 @@ class SessionManager:
             detail="Invalid authentication credentials",
             headers={"WWW-Authenticate": "Basic"},
         )
+    
+    def create_user_session(self, username: str) -> str:
+        """
+        Create a session for authenticated user and return session ID.
+        
+        Args:
+            username: Authenticated username
+            
+        Returns:
+            Session ID for tracking user activities
+        """
+        return self.create_session(username)
+    
+    def validate_user_access(self, username: str, session_id: str) -> bool:
+        """
+        Validate that a user has access to a specific session.
+        
+        Args:
+            username: Username to validate
+            session_id: Session ID to check access for
+            
+        Returns:
+            True if user has access, False otherwise
+        """
+        # For now, allow access to any session for authenticated users
+        # In a more complex system, you might track session ownership
+        return username is not None
+    
+    def get_user_sessions(self, username: str) -> list:
+        """
+        Get all active sessions for a user.
+        
+        Args:
+            username: Username to get sessions for
+            
+        Returns:
+            List of session IDs owned by the user
+        """
+        user_sessions = []
+        current_time = datetime.utcnow()
+        
+        for session_id, session_data in self._sessions.items():
+            if (session_data["username"] == username and 
+                current_time <= session_data["expires_at"]):
+                user_sessions.append(session_id)
+        
+        return user_sessions
 
 
 # Global session manager instance

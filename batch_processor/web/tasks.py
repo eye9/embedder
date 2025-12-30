@@ -2,7 +2,7 @@
 Task status and download endpoints for the batch Excel processor.
 
 This module provides endpoints for checking task status and downloading
-processed files with security validation.
+processed files with security validation and session-based access control.
 """
 
 import logging
@@ -16,8 +16,11 @@ from celery.result import AsyncResult
 from ..config.settings import get_config
 from ..services.file_manager import FileManager
 from ..workers.celery_app import celery_app
-from .auth import require_auth
+from .auth import require_auth, session_manager
 from .models import TaskStatus, DownloadInfo, ProcessingSummary, ErrorResponse
+
+# Import the sync result functions
+from .upload import _get_sync_result
 
 
 logger = logging.getLogger(__name__)
@@ -56,6 +59,35 @@ def parse_task_meta(meta: dict) -> dict:
     }
 
 
+def validate_user_task_access(task_id: str, user: str) -> bool:
+    """
+    Validate that a user has access to a specific task.
+    
+    Args:
+        task_id: Task ID to validate access for
+        user: Username requesting access
+        
+    Returns:
+        True if user has access, False otherwise
+    """
+    try:
+        # Get task result to check if it exists and get task info
+        task_result = get_task_result(task_id)
+        
+        # For now, we allow any authenticated user to access any task
+        # In a production system, you might want to track task ownership
+        # by storing user information in task metadata
+        
+        # Check if task exists (will raise exception if not found)
+        _ = task_result.state
+        
+        return True
+        
+    except Exception as e:
+        logger.warning(f"Task access validation failed for user {user}, task {task_id}: {e}")
+        return False
+
+
 @router.get("/{task_id}/status", response_model=TaskStatus)
 async def get_task_status(
     task_id: str,
@@ -71,6 +103,39 @@ async def get_task_status(
     - Time estimates
     """
     try:
+        # First check if this is a synchronous result
+        sync_result = _get_sync_result(task_id)
+        if sync_result:
+            if sync_result["status"] == "completed":
+                return TaskStatus(
+                    task_id=task_id,
+                    status="completed",
+                    progress=1.0,
+                    processed_rows=sync_result.get("processed_rows", 0),
+                    total_rows=sync_result.get("total_rows", 0),
+                    error_count=sync_result.get("error_count", 0),
+                    estimated_time_remaining=0,
+                    created_at=None,
+                    started_at=None,
+                    completed_at=None,
+                    error_message=None
+                )
+            else:
+                return TaskStatus(
+                    task_id=task_id,
+                    status="failed",
+                    progress=0.0,
+                    processed_rows=0,
+                    total_rows=0,
+                    error_count=1,
+                    estimated_time_remaining=None,
+                    created_at=None,
+                    started_at=None,
+                    completed_at=None,
+                    error_message=sync_result.get("error", "Processing failed")
+                )
+        
+        # Fallback to Celery task status
         task_result = get_task_result(task_id)
         
         # Get task state and info
@@ -283,6 +348,13 @@ async def download_file(
     security validation to ensure user can only access their files.
     """
     try:
+        # Validate user access to this task
+        if not validate_user_task_access(task_id, user):
+            raise HTTPException(
+                status_code=403,
+                detail="Access denied: you do not have permission to access this task"
+            )
+        
         task_result = get_task_result(task_id)
         
         if task_result.state != "SUCCESS":

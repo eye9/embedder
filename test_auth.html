@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Authentication</title>
+</head>
+<body>
+    <h1>Test Authentication</h1>
+    <button onclick="testAuth()">Test Auth</button>
+    <div id="result"></div>
+
+    <script>
+        async function testAuth() {
+            const username = 'admin';
+            const password = 'admin123';
+            const credentials = btoa(`${username}:${password}`);
+            
+            console.log('Testing authentication...');
+            console.log('Credentials:', credentials);
+            
+            try {
+                // Test with health endpoint (no auth required)
+                const healthResponse = await fetch('/health');
+                console.log('Health response:', healthResponse.status);
+                
+                // Test with protected endpoint
+                const formData = new FormData();
+                formData.append('test', 'data');
+                
+                const authResponse = await fetch('/upload/validate', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Basic ${credentials}`
+                    },
+                    body: formData
+                });
+                
+                console.log('Auth response:', authResponse.status);
+                const responseText = await authResponse.text();
+                console.log('Response text:', responseText);
+                
+                document.getElementById('result').innerHTML = `
+                    <p>Health: ${healthResponse.status}</p>
+                    <p>Auth: ${authResponse.status}</p>
+                    <p>Response: ${responseText}</p>
+                `;
+                
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('result').innerHTML = `Error: ${error.message}`;
+            }
+        }
+    </script>
+</body>
+</html>

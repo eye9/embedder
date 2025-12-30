@@ -30,6 +30,17 @@ router = APIRouter(prefix="/upload", tags=["upload"])
 excel_processor = ExcelProcessor()
 file_manager = FileManager()
 
+# Simple in-memory storage for synchronous processing results
+_sync_results = {}
+
+def _store_sync_result(task_id: str, result: dict) -> None:
+    """Store synchronous processing result for later retrieval."""
+    _sync_results[task_id] = result
+
+def _get_sync_result(task_id: str) -> dict:
+    """Get synchronous processing result."""
+    return _sync_results.get(task_id)
+
 
 def validate_uploaded_file(file: UploadFile) -> Tuple[bool, str, dict]:
     """
@@ -158,35 +169,85 @@ async def upload_file(
         else:
             rows_to_process = validation_result.rows_with_descriptions
         
-        # Create processing task
-        task_result = celery_app.send_task(
-            'batch_processor.workers.processing_task.process_file',
-            args=[
-                session_id,
-                str(file_path),
-                process_mode.value,
-                algorithm.value,
-                user
-            ]
-        )
-        
-        task_id = task_result.id
-        logger.info(f"Created processing task {task_id} for session {session_id}")
-        
-        # Schedule file cleanup
-        file_manager.schedule_cleanup(session_id)
-        
-        return UploadResponse(
-            task_id=task_id,
-            session_id=session_id,
-            filename=file.filename,
-            file_size=file_info.get("file_size", 0),
-            total_rows=validation_result.total_rows,
-            rows_to_process=rows_to_process,
-            processing_mode=process_mode,
-            algorithm=algorithm,
-            message=f"File uploaded successfully. Processing {rows_to_process} rows with {algorithm.value} algorithm."
-        )
+        # Try to create processing task, fallback to synchronous processing if Celery unavailable
+        try:
+            task_result = celery_app.send_task(
+                'batch_processor.workers.processing_task.process_file',
+                args=[
+                    session_id,
+                    str(file_path),
+                    process_mode.value,
+                    algorithm.value,
+                    user
+                ]
+            )
+            
+            task_id = task_result.id
+            logger.info(f"Created processing task {task_id} for session {session_id}")
+            
+            # Schedule file cleanup using Celery task (preferred)
+            file_manager.schedule_cleanup_task(session_id)
+            
+            return UploadResponse(
+                task_id=task_id,
+                session_id=session_id,
+                filename=file.filename,
+                file_size=file_info.get("file_size", 0),
+                total_rows=validation_result.total_rows,
+                rows_to_process=rows_to_process,
+                processing_mode=process_mode,
+                algorithm=algorithm,
+                message=f"File uploaded successfully. Processing {rows_to_process} rows with {algorithm.value} algorithm."
+            )
+            
+        except Exception as celery_error:
+            logger.warning(f"Celery task creation failed: {celery_error}. Processing synchronously.")
+            
+            # Fallback to synchronous processing
+            import uuid
+            from ..workers.processing_task import process_file_sync
+            
+            # Generate a fake task ID for tracking
+            task_id = str(uuid.uuid4())
+            
+            try:
+                # Process file synchronously
+                result = process_file_sync(
+                    session_id=session_id,
+                    file_path=str(file_path),
+                    process_mode=process_mode.value,
+                    algorithm=algorithm.value,
+                    user=user
+                )
+                
+                logger.info(f"Synchronous processing completed for session {session_id}")
+                
+                # Schedule file cleanup using Celery task (preferred)
+                file_manager.schedule_cleanup_task(session_id)
+                
+                # Store the result for later retrieval
+                _store_sync_result(task_id, result)
+                
+                return UploadResponse(
+                    task_id=task_id,
+                    session_id=session_id,
+                    filename=file.filename,
+                    file_size=file_info.get("file_size", 0),
+                    total_rows=validation_result.total_rows,
+                    rows_to_process=rows_to_process,
+                    processing_mode=process_mode,
+                    algorithm=algorithm,
+                    message=f"File processed successfully! {rows_to_process} rows processed with {algorithm.value} algorithm. Ready for download."
+                )
+                
+            except Exception as sync_error:
+                logger.error(f"Synchronous processing failed: {sync_error}")
+                # Clean up file on processing failure
+                file_manager.cleanup_session(session_id)
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"File processing failed: {str(sync_error)}"
+                )
         
     except HTTPException:
         raise

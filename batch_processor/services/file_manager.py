@@ -220,6 +220,31 @@ class FileManager:
         
         logger.info(f"Scheduled cleanup for session {session_id} in {delay_hours} hours")
     
+    def schedule_cleanup_task(self, session_id: str, delay_hours: int = 24) -> None:
+        """
+        Schedule automatic cleanup using Celery task (preferred method).
+        
+        Args:
+            session_id: Session ID to clean up
+            delay_hours: Hours to wait before cleanup
+        """
+        try:
+            from ..workers.celery_app import celery_app
+            
+            # Schedule cleanup task to run after delay
+            celery_app.send_task(
+                'batch_processor.workers.cleanup_task.cleanup_session_files',
+                args=[session_id],
+                countdown=delay_hours * 3600  # Convert hours to seconds
+            )
+            
+            logger.info(f"Scheduled Celery cleanup task for session {session_id} in {delay_hours} hours")
+            
+        except Exception as e:
+            logger.warning(f"Failed to schedule Celery cleanup task: {e}. Falling back to thread-based cleanup.")
+            # Fallback to thread-based cleanup
+            self.schedule_cleanup(session_id, delay_hours)
+    
     def cleanup_expired_sessions(self, max_age_hours: int = 24) -> int:
         """Clean up sessions older than max_age_hours."""
         if not self.base_path.exists():

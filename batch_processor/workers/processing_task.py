@@ -17,12 +17,239 @@ from batch_processor.services.excel_processor import ExcelProcessor
 from batch_processor.services.file_manager import FileManager
 from batch_processor.services.tnved_selector import SelectorFactory
 from batch_processor.services.progress_tracker import get_progress_tracker
+from batch_processor.services.tnved_integration import get_tnved_integration, TNVEDIntegrationError
 from batch_processor.models.result import ProcessingResult
 from batch_processor.config.settings import get_config
-from services.tnved_searcher import TNVEDSearcher
 
 
 logger = logging.getLogger(__name__)
+
+
+def process_file_sync(
+    session_id: str,
+    file_path: str,
+    process_mode: str,
+    algorithm: str,
+    user: str = "anonymous",
+    **kwargs
+) -> Dict[str, Any]:
+    """
+    Synchronous version of file processing for when Celery is not available.
+    
+    Args:
+        session_id: Unique session identifier
+        file_path: Path to the Excel file to process
+        process_mode: "all" or "empty_only"
+        algorithm: "similarity_top1" or "llm_reasoning"
+        user: Username for logging
+        **kwargs: Additional configuration parameters
+        
+    Returns:
+        Dictionary with processing results and metadata
+    """
+    logger.info(
+        f"Starting synchronous processing: session={session_id}, "
+        f"file={file_path}, mode={process_mode}, algorithm={algorithm}, user={user}"
+    )
+    
+    start_time = time.time()
+    
+    try:
+        # Initialize services
+        config = get_config()
+        excel_processor = ExcelProcessor(chunk_size=config.processing.chunk_size)
+        file_manager = FileManager(base_path=config.files.temp_dir)
+        
+        # Initialize TNVED integration
+        try:
+            tnved_integration = get_tnved_integration()
+            logger.info("TNVED integration initialized for sync processing")
+        except Exception as e:
+            logger.error(f"Failed to initialize TNVED integration: {e}")
+            # Fall back to basic processing without TNVED codes
+            return _process_file_without_tnved(
+                session_id, file_path, process_mode, excel_processor, file_manager, start_time
+            )
+        
+        # Convert file path to Path object
+        file_path_obj = Path(file_path)
+        
+        # Validate the file
+        is_valid, error_msg, total_rows = excel_processor.validate_file(file_path_obj)
+        if not is_valid:
+            return {
+                "status": "failed",
+                "error": error_msg,
+                "stage": "validation"
+            }
+        
+        logger.info(f"File validation successful: {total_rows} total rows")
+        
+        # Get file info for processing statistics
+        file_info = excel_processor.get_file_info(file_path_obj)
+        
+        # Calculate rows to process based on mode
+        if process_mode == "empty_only":
+            rows_to_process = file_info['rows_with_descriptions'] - file_info['rows_with_existing_codes']
+        else:
+            rows_to_process = file_info['rows_with_descriptions']
+        
+        logger.info(f"Processing {rows_to_process} rows in {process_mode} mode")
+        
+        # Create selector
+        try:
+            selector = tnved_integration.create_selector(algorithm, **kwargs)
+        except Exception as e:
+            logger.error(f"Failed to create selector: {e}")
+            return _process_file_without_tnved(
+                session_id, file_path, process_mode, excel_processor, file_manager, start_time
+            )
+        
+        # Process the file with actual TNVED integration
+        import pandas as pd
+        
+        # Read the original file
+        df = pd.read_excel(file_path_obj, engine='openpyxl')
+        
+        # Find description column
+        description_col = None
+        for col in df.columns:
+            if "Product Detailed Description" in str(col):
+                description_col = col
+                break
+        
+        if not description_col:
+            return {
+                "status": "failed",
+                "error": "Required column 'Product Detailed Description' not found",
+                "stage": "processing"
+            }
+        
+        # Process rows with TNVED codes
+        results = []
+        processed_count = 0
+        error_count = 0
+        
+        for idx, row in df.iterrows():
+            try:
+                description = str(row[description_col]).strip()
+                if not description or description.lower() in ['nan', 'none', '']:
+                    continue
+                
+                # Check if we should skip this row based on process_mode
+                if process_mode == "empty_only":
+                    existing_code = str(row.get('HTS Code', '')).strip()
+                    if existing_code and existing_code.lower() not in ['nan', 'none', '']:
+                        continue
+                
+                # Process with selector
+                result = selector.select_code(description, idx)
+                results.append(result)
+                processed_count += 1
+                
+                if not result.is_successful():
+                    error_count += 1
+                
+            except Exception as e:
+                logger.error(f"Failed to process row {idx}: {e}")
+                error_count += 1
+        
+        # Add results to dataframe
+        df['TNVED_Code'] = ''
+        df['Selection_Reason'] = ''
+        
+        for result in results:
+            if result.row_index < len(df):
+                df.loc[result.row_index, 'TNVED_Code'] = result.tnved_code or ''
+                df.loc[result.row_index, 'Selection_Reason'] = result.selection_reason
+        
+        # Save the processed file
+        output_path = file_manager.save_processed_file(
+            session_id,
+            df,
+            file_path_obj.name
+        )
+        
+        # Calculate final metrics
+        end_time = time.time()
+        processing_time = end_time - start_time
+        
+        logger.info(f"Synchronous processing completed in {processing_time:.2f} seconds")
+        
+        return {
+            "status": "completed",
+            "output_file": str(output_path),
+            "processed_rows": processed_count,
+            "total_rows": total_rows,
+            "error_count": error_count,
+            "processing_time_seconds": processing_time,
+            "algorithm_used": algorithm,
+            "processing_mode": process_mode,
+            "message": f"File processed successfully with {processed_count} TNVED codes assigned"
+        }
+        
+    except Exception as e:
+        logger.error(f"Synchronous processing failed: {e}", exc_info=True)
+        return {
+            "status": "failed",
+            "error": str(e),
+            "stage": "processing"
+        }
+
+
+def _process_file_without_tnved(
+    session_id: str,
+    file_path: str,
+    process_mode: str,
+    excel_processor: Any,
+    file_manager: Any,
+    start_time: float
+) -> Dict[str, Any]:
+    """
+    Fallback processing without TNVED integration.
+    
+    This creates the output file structure but doesn't assign actual TNVED codes.
+    """
+    try:
+        import pandas as pd
+        
+        file_path_obj = Path(file_path)
+        
+        # Read the original file
+        df = pd.read_excel(file_path_obj, engine='openpyxl')
+        
+        # Add the required output columns
+        df['TNVED_Code'] = ''
+        df['Selection_Reason'] = 'TNVED integration not available - manual assignment required'
+        
+        # Save the processed file
+        output_path = file_manager.save_processed_file(
+            session_id,
+            df,
+            file_path_obj.name
+        )
+        
+        # Calculate final metrics
+        end_time = time.time()
+        processing_time = end_time - start_time
+        
+        return {
+            "status": "completed",
+            "output_file": str(output_path),
+            "processed_rows": 0,
+            "total_rows": len(df),
+            "error_count": 0,
+            "processing_time_seconds": processing_time,
+            "algorithm_used": "none",
+            "processing_mode": process_mode,
+            "message": "File processed without TNVED integration - manual code assignment required"
+        }
+    except Exception as e:
+        return {
+            "status": "failed",
+            "error": f"Fallback processing failed: {e}",
+            "stage": "fallback_processing"
+        }
 
 
 class ProcessingTaskError(Exception):
@@ -60,7 +287,7 @@ class ProcessingTask(Task):
         """Initialize the processing task."""
         self.excel_processor = None
         self.file_manager = None
-        self.tnved_searcher = None
+        self.tnved_integration = None
         self.progress_tracker = None
         self._config = None
     
@@ -76,13 +303,16 @@ class ProcessingTask(Task):
             )
             self.progress_tracker = get_progress_tracker()
             
-            # Initialize TNVED searcher
+            # Initialize TNVED integration
             try:
-                self.tnved_searcher = TNVEDSearcher()
-                logger.info("TNVED searcher initialized successfully")
+                self.tnved_integration = get_tnved_integration()
+                logger.info("TNVED integration initialized successfully")
+            except TNVEDIntegrationError as e:
+                logger.error(f"Failed to initialize TNVED integration: {e}")
+                raise ProcessingTaskError(f"TNVED integration initialization failed: {e}")
             except Exception as e:
-                logger.error(f"Failed to initialize TNVED searcher: {e}")
-                raise ProcessingTaskError(f"TNVED searcher initialization failed: {e}")
+                logger.error(f"Unexpected error initializing TNVED integration: {e}")
+                raise ProcessingTaskError(f"TNVED integration initialization failed: {e}")
     
     def run(
         self,
@@ -245,7 +475,6 @@ class ProcessingTask(Task):
             
             # Prepare selector parameters
             selector_params = {
-                'tnved_searcher': self.tnved_searcher,
                 'confidence_threshold': kwargs.get(
                     'confidence_threshold', 
                     config.processing.confidence_threshold
@@ -253,8 +482,8 @@ class ProcessingTask(Task):
                 'top_k': kwargs.get('top_k', config.processing.llm_top_k)
             }
             
-            # Create selector using factory
-            selector = SelectorFactory.create_selector(algorithm, **selector_params)
+            # Create selector using integration
+            selector = self.tnved_integration.create_selector(algorithm, **selector_params)
             logger.info(f"Created {algorithm} selector")
             
             return selector

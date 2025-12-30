@@ -70,22 +70,41 @@ class BatchProcessorApp {
         const username = document.getElementById('username').value;
         const password = document.getElementById('password').value;
         
+        console.log('Attempting authentication for user:', username);
+        
         // Store credentials for API calls
         this.authCredentials = btoa(`${username}:${password}`);
         
         try {
             this.showLoading();
             
-            // Test authentication by calling a protected endpoint
-            const response = await this.makeAuthenticatedRequest('/health');
+            // Test authentication by making a simple request with credentials
+            // We'll just try to access a protected endpoint and check the response
+            const testFormData = new FormData();
+            testFormData.append('test', 'auth'); // Minimal data
             
-            if (response.ok) {
+            const response = await fetch('/upload/validate', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Basic ${this.authCredentials}`
+                },
+                body: testFormData
+            });
+            
+            console.log('Auth test response status:', response.status);
+            
+            if (response.status === 401) {
+                console.error('Authentication failed: 401 Unauthorized');
+                throw new Error('Invalid credentials');
+            } else {
+                // Any other status means authentication worked
+                // (400 is expected for invalid file data, but auth passed)
+                console.log('Authentication successful');
                 this.hideAuthError();
                 this.showAppSection();
-            } else {
-                throw new Error('Invalid credentials');
             }
         } catch (error) {
+            console.error('Authentication error:', error);
             this.showAuthError('Неверные учетные данные. Попробуйте снова.');
             this.authCredentials = null;
         } finally {
@@ -145,6 +164,7 @@ class BatchProcessorApp {
      * Validate selected file
      */
     async validateFile(file) {
+        console.log('Validating file:', file.name);
         try {
             const formData = new FormData();
             formData.append('file', file);
@@ -154,17 +174,23 @@ class BatchProcessorApp {
                 body: formData
             });
             
+            console.log('Validation response status:', response.status);
+            
             if (response.ok) {
                 const result = await response.json();
+                console.log('Validation result:', result);
                 if (result.is_valid) {
                     this.showValidationInfo(result);
                 } else {
                     this.showUploadError(result.error_message);
                 }
             } else {
+                const errorText = await response.text();
+                console.error('Validation failed:', response.status, errorText);
                 throw new Error('Validation failed');
             }
         } catch (error) {
+            console.error('Validation error:', error);
             this.showUploadError('Ошибка при проверке файла: ' + error.message);
         }
     }
@@ -410,6 +436,9 @@ class BatchProcessorApp {
         
         if (this.authCredentials) {
             headers['Authorization'] = `Basic ${this.authCredentials}`;
+            console.log('Making authenticated request to:', url, 'with credentials');
+        } else {
+            console.error('No authentication credentials available for request to:', url);
         }
         
         return fetch(url, {
