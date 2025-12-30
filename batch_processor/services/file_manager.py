@@ -89,7 +89,7 @@ class FileManager:
         
         return session_dir
     
-    def save_uploaded_file(self, session_id: str, file: UploadFile) -> Path:
+    async def save_uploaded_file(self, session_id: str, file: UploadFile) -> Path:
         """Save an uploaded file to the session directory."""
         self._validate_session_id(session_id)
         self._validate_filename(file.filename)
@@ -102,8 +102,15 @@ class FileManager:
             raise ValueError("Security violation: file path outside base path")
         
         try:
+            # Read file content
+            content = await file.read()
+            
+            # Write to file
             with open(file_path, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
+                buffer.write(content)
+            
+            # Reset file position for potential reuse
+            await file.seek(0)
             
             logger.info(f"Saved uploaded file: {file_path}")
             return file_path

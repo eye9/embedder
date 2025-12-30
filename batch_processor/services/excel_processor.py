@@ -38,7 +38,68 @@ class ExcelProcessor:
         
         logger.info(f"ExcelProcessor initialized with chunk_size={chunk_size}")
     
-    def validate_file(self, file_path: Path) -> ValidationResult:
+    def get_file_info(self, file_path: Path) -> Dict[str, Any]:
+        """
+        Get detailed information about Excel file structure and content.
+        
+        Args:
+            file_path: Path to the Excel file
+            
+        Returns:
+            Dictionary with file information
+        """
+        try:
+            df = pd.read_excel(file_path, engine='openpyxl')
+            
+            # Find columns
+            description_col = next(
+                (col for col in df.columns if "Product Detailed Description" in str(col)), 
+                None
+            )
+            
+            hts_col = None
+            for col in df.columns:
+                if "HTS Code" in str(col) or "HTS_Code" in str(col):
+                    hts_col = col
+                    break
+            
+            # Count rows with descriptions
+            rows_with_descriptions = 0
+            if description_col:
+                rows_with_descriptions = (~df[description_col].isna()).sum() - \
+                                       (df[description_col].astype(str).str.strip() == '').sum()
+            
+            # Count rows with existing codes
+            rows_with_existing_codes = 0
+            if hts_col:
+                rows_with_existing_codes = (~df[hts_col].isna()).sum() - \
+                                         (df[hts_col].astype(str).str.strip() == '').sum()
+            
+            return {
+                "total_rows": len(df),
+                "rows_with_descriptions": rows_with_descriptions,
+                "rows_with_existing_codes": rows_with_existing_codes,
+                "columns": df.columns.tolist(),
+                "has_description_column": description_col is not None,
+                "has_hts_column": hts_col is not None,
+                "description_column": description_col,
+                "hts_column": hts_col
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get file info: {e}")
+            return {
+                "total_rows": 0,
+                "rows_with_descriptions": 0,
+                "rows_with_existing_codes": 0,
+                "columns": [],
+                "has_description_column": False,
+                "has_hts_column": False,
+                "description_column": None,
+                "hts_column": None
+            }
+
+    def validate_file(self, file_path: Path) -> Tuple[bool, str, int]:
         """
         Validate Excel file format and required columns.
         
@@ -46,26 +107,18 @@ class ExcelProcessor:
             file_path: Path to the Excel file
             
         Returns:
-            ValidationResult with validation status and metadata
+            Tuple of (is_valid, error_message, total_rows)
         """
         logger.info(f"Validating Excel file: {file_path}")
         
         try:
             # Check if file exists
             if not file_path.exists():
-                return ValidationResult(
-                    is_valid=False,
-                    error_message=f"File not found: {file_path}",
-                    total_rows=0
-                )
+                return False, f"File not found: {file_path}", 0
             
             # Check file extension
             if file_path.suffix.lower() not in ['.xlsx', '.xls']:
-                return ValidationResult(
-                    is_valid=False,
-                    error_message=f"Invalid file format. Expected .xlsx or .xls, got {file_path.suffix}",
-                    total_rows=0
-                )
+                return False, f"Invalid file format. Expected .xlsx or .xls, got {file_path.suffix}", 0
             
             # Try to read the file header to check structure
             try:
@@ -73,11 +126,7 @@ class ExcelProcessor:
                 df_sample = pd.read_excel(file_path, nrows=5, engine='openpyxl')
                 
                 if df_sample.empty:
-                    return ValidationResult(
-                        is_valid=False,
-                        error_message="File is empty or contains no data",
-                        total_rows=0
-                    )
+                    return False, "File is empty or contains no data", 0
                 
                 # Check for required columns
                 columns = df_sample.columns.tolist()
@@ -87,12 +136,7 @@ class ExcelProcessor:
                 )
                 
                 if not has_description:
-                    return ValidationResult(
-                        is_valid=False,
-                        error_message=f"Required column 'Product Detailed Description' not found. Available columns: {columns}",
-                        total_rows=len(df_sample),
-                        has_description_column=False
-                    )
+                    return False, f"Required column 'Product Detailed Description' not found. Available columns: {columns}", len(df_sample)
                 
                 # Check for optional HTS Code column
                 has_hts_code = any(
@@ -128,30 +172,14 @@ class ExcelProcessor:
                            f"{empty_descriptions} empty descriptions, "
                            f"{existing_hts_codes} existing HTS codes")
                 
-                return ValidationResult(
-                    is_valid=True,
-                    error_message="",
-                    total_rows=total_rows,
-                    has_description_column=True,
-                    has_hts_code_column=has_hts_code,
-                    empty_descriptions=empty_descriptions,
-                    existing_hts_codes=existing_hts_codes
-                )
+                return True, "", total_rows
                 
             except Exception as e:
-                return ValidationResult(
-                    is_valid=False,
-                    error_message=f"Failed to read Excel file: {str(e)}",
-                    total_rows=0
-                )
+                return False, f"Failed to read Excel file: {str(e)}", 0
                 
         except Exception as e:
             logger.error(f"File validation failed: {e}")
-            return ValidationResult(
-                is_valid=False,
-                error_message=f"Validation error: {str(e)}",
-                total_rows=0
-            )
+            return False, f"Validation error: {str(e)}", 0
     
     def read_file_chunked(
         self, 

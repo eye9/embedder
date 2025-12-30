@@ -102,7 +102,7 @@ class WebConfig:
 class AuthConfig:
     """Authentication configuration."""
     enabled: bool = True
-    users: Dict[str, str] = field(default_factory=dict)  # username: password
+    users: Dict[str, str] = field(default_factory=lambda: {"admin": "admin123"})  # username: password
     session_secret: str = "change-this-secret-key"
 
 
@@ -254,11 +254,16 @@ def load_config(config_path: Optional[str] = None) -> BatchProcessorConfig:
     Load configuration from file or environment.
     
     Args:
-        config_path: Path to YAML configuration file. If None, loads from environment.
+        config_path: Path to YAML configuration file. If None, checks environment
+                    variable BATCH_PROCESSOR_CONFIG, then loads from environment.
     
     Returns:
         BatchProcessorConfig instance
     """
+    # Check for config path in environment if not provided
+    if config_path is None:
+        config_path = os.getenv("BATCH_PROCESSOR_CONFIG")
+    
     if config_path and Path(config_path).exists():
         config = BatchProcessorConfig.from_yaml(config_path)
     else:

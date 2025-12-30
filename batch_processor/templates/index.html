@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Batch Excel Processor</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1><i class="fas fa-file-excel"></i> Batch Excel Processor</h1>
+            <p class="subtitle">Автоматический подбор кодов ТНВЭД для описаний товаров</p>
+        </header>
+
+        <!-- Authentication Section -->
+        <div id="auth-section" class="auth-section">
+            <div class="auth-card">
+                <h2><i class="fas fa-lock"></i> Авторизация</h2>
+                <form id="auth-form">
+                    <div class="form-group">
+                        <label for="username">Имя пользователя:</label>
+                        <input type="text" id="username" name="username" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="password">Пароль:</label>
+                        <input type="password" id="password" name="password" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-sign-in-alt"></i> Войти
+                    </button>
+                </form>
+                <div id="auth-error" class="error-message" style="display: none;"></div>
+            </div>
+        </div>
+
+        <!-- Main Application Section -->
+        <div id="app-section" class="app-section" style="display: none;">
+            
+            <!-- File Upload Section -->
+            <div id="upload-section" class="upload-section">
+                <div class="upload-card">
+                    <h2><i class="fas fa-cloud-upload-alt"></i> Загрузка файла</h2>
+                    
+                    <form id="upload-form" enctype="multipart/form-data">
+                        <div class="file-input-wrapper">
+                            <input type="file" id="file-input" name="file" accept=".xlsx,.xls" required>
+                            <label for="file-input" class="file-input-label">
+                                <i class="fas fa-file-excel"></i>
+                                <span>Выберите Excel файл или перетащите сюда</span>
+                            </label>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="process-mode">Режим обработки:</label>
+                                <select id="process-mode" name="process_mode">
+                                    <option value="all">Обработать все строки</option>
+                                    <option value="empty_only">Только строки без кодов HTS</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="algorithm">Алгоритм поиска:</label>
+                                <select id="algorithm" name="algorithm">
+                                    <option value="similarity_top1">Similarity Top-1</option>
+                                    <option value="llm_reasoning">LLM Reasoning</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary btn-upload">
+                            <i class="fas fa-upload"></i> Загрузить и обработать
+                        </button>
+                    </form>
+                    
+                    <div id="upload-error" class="error-message" style="display: none;"></div>
+                </div>
+            </div>
+
+            <!-- File Validation Section -->
+            <div id="validation-section" class="validation-section" style="display: none;">
+                <div class="validation-card">
+                    <h3><i class="fas fa-check-circle"></i> Информация о файле</h3>
+                    <div id="validation-info" class="validation-info"></div>
+                </div>
+            </div>
+
+            <!-- Progress Section -->
+            <div id="progress-section" class="progress-section" style="display: none;">
+                <div class="progress-card">
+                    <h3><i class="fas fa-cog fa-spin"></i> Обработка файла</h3>
+                    
+                    <div class="progress-info">
+                        <div class="progress-stats">
+                            <div class="stat">
+                                <span class="stat-label">Обработано строк:</span>
+                                <span id="processed-rows">0</span> / <span id="total-rows">0</span>
+                            </div>
+                            <div class="stat">
+                                <span class="stat-label">Ошибки:</span>
+                                <span id="error-count">0</span>
+                            </div>
+                            <div class="stat">
+                                <span class="stat-label">Прогресс:</span>
+                                <span id="progress-percent">0%</span>
+                            </div>
+                            <div class="stat">
+                                <span class="stat-label">Осталось времени:</span>
+                                <span id="time-remaining">Расчет...</span>
+                            </div>
+                        </div>
+                        
+                        <div class="progress-bar-container">
+                            <div class="progress-bar">
+                                <div id="progress-fill" class="progress-fill"></div>
+                            </div>
+                        </div>
+                        
+                        <div id="current-operation" class="current-operation"></div>
+                    </div>
+                    
+                    <div id="progress-error" class="error-message" style="display: none;"></div>
+                </div>
+            </div>
+
+            <!-- Results Section -->
+            <div id="results-section" class="results-section" style="display: none;">
+                <div class="results-card">
+                    <h3><i class="fas fa-check-circle text-success"></i> Обработка завершена</h3>
+                    
+                    <div id="processing-summary" class="processing-summary"></div>
+                    
+                    <div class="download-section">
+                        <button id="download-btn" class="btn btn-success btn-download">
+                            <i class="fas fa-download"></i> Скачать обработанный файл
+                        </button>
+                    </div>
+                    
+                    <div class="actions">
+                        <button id="new-file-btn" class="btn btn-secondary">
+                            <i class="fas fa-plus"></i> Обработать новый файл
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Error Section -->
+            <div id="error-section" class="error-section" style="display: none;">
+                <div class="error-card">
+                    <h3><i class="fas fa-exclamation-triangle text-error"></i> Ошибка обработки</h3>
+                    <div id="error-details" class="error-details"></div>
+                    <div class="actions">
+                        <button id="retry-btn" class="btn btn-primary">
+                            <i class="fas fa-redo"></i> Попробовать снова
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>&copy; 2024 Batch Excel Processor. Система автоматического подбора кодов ТНВЭД.</p>
+        </footer>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay" style="display: none;">
+        <div class="loading-spinner">
+            <i class="fas fa-spinner fa-spin"></i>
+            <p>Загрузка...</p>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

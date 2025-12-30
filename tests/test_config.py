@@ -13,8 +13,8 @@ def test_config_defaults():
     """Test that Config initializes with correct default values"""
     config = Config()
     
-    assert config.model.name == "ai-forever/FRIDA"
-    assert config.model.device == "cpu"
+    assert config.model.name == "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    assert config.model.device == "cuda"
     assert config.database.path == "./chroma_db"
     assert config.database.collection_name == "tnved"
     assert config.processing.batch_size == 100
@@ -159,7 +159,7 @@ processing:
         assert config.processing.batch_size == 75
         
         # Default values
-        assert config.model.device == "cpu"
+        assert config.model.device == "cuda"
         assert config.database.path == "./chroma_db"
         assert config.search.default_top_k == 5
     finally:
@@ -178,7 +178,7 @@ def test_config_from_empty_file():
         config = Config.from_file(temp_path)
         
         # All should be defaults
-        assert config.model.name == "ai-forever/FRIDA"
+        assert config.model.name == "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
         assert config.database.path == "./chroma_db"
         assert config.processing.batch_size == 100
     finally:
