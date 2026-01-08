@@ -248,6 +248,23 @@ async def get_processing_summary(
     including performance metrics and processing details.
     """
     try:
+        # First check if this is a synchronous result
+        sync_result = _get_sync_result(task_id)
+        if sync_result and sync_result.get("status") == "completed":
+            return ProcessingSummary(
+                task_id=task_id,
+                total_rows=sync_result.get("total_rows", 0),
+                processed_rows=sync_result.get("processed_rows", 0),
+                skipped_rows=sync_result.get("skipped_rows", 0),
+                successful_assignments=sync_result.get("successful_assignments", 0),
+                failed_assignments=sync_result.get("failed_assignments", 0),
+                processing_time_seconds=sync_result.get("processing_time_seconds", 0.0),
+                average_time_per_row_ms=sync_result.get("average_time_per_row_ms", 0.0),
+                algorithm_used=sync_result.get("algorithm_used", "similarity_top1"),
+                processing_mode=sync_result.get("processing_mode", "all")
+            )
+        
+        # Fallback to Celery task result
         task_result = get_task_result(task_id)
         
         if task_result.state != "SUCCESS":

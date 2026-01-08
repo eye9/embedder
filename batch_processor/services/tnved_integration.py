@@ -99,6 +99,13 @@ class TNVEDSystemIntegration:
             logger.info("TNVED system integration initialized successfully")
             
         except Exception as e:
+            # If initialization fails due to missing dependencies or other issues,
+            # we still mark as initialized but with limited functionality
+            logger.warning(f"TNVED integration initialization failed: {e}")
+            logger.warning("Falling back to basic processing without TNVED codes")
+            self._initialized = True  # Mark as initialized to prevent retry loops
+            raise TNVEDIntegrationError(f"TNVED integration unavailable: {e}") from e
+        except Exception as e:
             error_msg = f"Failed to initialize TNVED integration: {e}"
             logger.error(error_msg, exc_info=True)
             raise TNVEDIntegrationError(error_msg) from e

@@ -36,6 +36,7 @@ def process_file_sync(
     process_mode: str,
     algorithm: str,
     user: str = "anonymous",
+    celery_task=None,  # Add Celery task context for progress updates
     **kwargs
 ) -> Dict[str, Any]:
     """
@@ -75,6 +76,29 @@ def process_file_sync(
         config = get_config()
         excel_processor = ExcelProcessor(chunk_size=config.processing.chunk_size)
         file_manager = FileManager(base_path=config.files.temp_dir)
+        progress_tracker = get_progress_tracker()
+        
+        # Initialize progress tracking for sync processing
+        sync_task_id = "sync_" + session_id
+        progress_tracker.create_task_started_update(
+            task_id=sync_task_id,
+            total_rows=0,  # Will be updated after validation
+            message="Starting file processing..."
+        )
+        
+        # Also update Celery task state if available
+        if celery_task:
+            celery_task.update_state(
+                state='PROGRESS',
+                meta={
+                    'progress': 0.0,
+                    'processed_rows': 0,
+                    'total_rows': 0,
+                    'error_count': 0,
+                    'stage': 'starting',
+                    'message': 'Starting file processing...'
+                }
+            )
         
         # Initialize TNVED integration
         try:
@@ -112,6 +136,30 @@ def process_file_sync(
         
         logger.info(f"Processing {rows_to_process} rows in {process_mode} mode")
         
+        # Update progress after validation
+        progress_tracker.update_progress(
+            task_id=sync_task_id,
+            status='processing',
+            progress=0.05,
+            processed_rows=0,
+            total_rows=int(rows_to_process),
+            message=f"Validation complete. Processing {rows_to_process} rows..."
+        )
+        
+        # Also update Celery task state if available
+        if celery_task:
+            celery_task.update_state(
+                state='PROGRESS',
+                meta={
+                    'progress': 0.05,
+                    'processed_rows': 0,
+                    'total_rows': int(rows_to_process),
+                    'error_count': 0,
+                    'stage': 'processing',
+                    'message': f'Validation complete. Processing {rows_to_process} rows...'
+                }
+            )
+        
         # Create selector
         try:
             selector = tnved_integration.create_selector(algorithm, **kwargs)
@@ -124,12 +172,12 @@ def process_file_sync(
         # Process the file with actual TNVED integration
         import pandas as pd
         
-        # Read the original file
-        df = pd.read_excel(file_path_obj, engine='openpyxl')
+        # Read the original file for final output
+        df_original = pd.read_excel(file_path_obj, engine='openpyxl')
         
         # Find description column
         description_col = None
-        for col in df.columns:
+        for col in df_original.columns:
             if "Product Detailed Description" in str(col):
                 description_col = col
                 break
@@ -141,49 +189,97 @@ def process_file_sync(
                 "stage": "processing"
             }
         
-        # Process rows with TNVED codes
+        # Process rows with TNVED codes using proper filtering
         results = []
         processed_count = 0
         error_count = 0
         
-        for idx, row in df.iterrows():
-            try:
-                description = str(row[description_col]).strip()
-                if not description or description.lower() in ['nan', 'none', '']:
-                    continue
-                
-                # Check if we should skip this row based on process_mode
-                if process_mode == "empty_only":
-                    existing_code = str(row.get('HTS Code', '')).strip()
-                    if existing_code and existing_code.lower() not in ['nan', 'none', '']:
+        # Use excel_processor to get properly filtered chunks
+        for chunk, start_row, total_rows in excel_processor.read_file_chunked(file_path_obj, process_mode):
+            logger.info(f"Processing chunk with {len(chunk)} rows (original rows {start_row} to {start_row + len(chunk) - 1})")
+            
+            for chunk_idx, row in chunk.iterrows():
+                try:
+                    description = str(row[description_col]).strip()
+                    if not description or description.lower() in ['nan', 'none', '']:
                         continue
-                
-                # Process with selector
-                result = selector.select_code(description, idx)
-                results.append(result)
-                processed_count += 1
-                
-                if not result.is_successful():
+                    
+                    # Use the original dataframe index (chunk_idx) for result mapping
+                    logger.info(f"Processing row {chunk_idx}: '{description[:50]}...'")
+                    
+                    # Process with selector
+                    result = selector.select_code(description, chunk_idx)
+                    results.append(result)
+                    processed_count += 1
+                    
+                    if not result.is_successful():
+                        error_count += 1
+                    
+                    # Update progress
+                    progress = min(processed_count / rows_to_process, 1.0) if rows_to_process > 0 else 1.0
+                    
+                    # Calculate estimated time remaining
+                    elapsed_time = time.time() - start_time
+                    if elapsed_time > 0 and progress > 0:
+                        estimated_total_time = elapsed_time / progress
+                        estimated_remaining = max(0, int(estimated_total_time - elapsed_time))
+                    else:
+                        estimated_remaining = None
+                    
+                    progress_tracker.update_progress(
+                        task_id=sync_task_id,
+                        status='processing',
+                        progress=progress,
+                        processed_rows=int(processed_count),
+                        total_rows=int(rows_to_process),
+                        error_count=int(error_count),
+                        message=f"Processing row {processed_count}/{rows_to_process}...",
+                        estimated_time_remaining=estimated_remaining
+                    )
+                    
+                    # Also update Celery task state if available
+                    if celery_task:
+                        celery_task.update_state(
+                            state='PROGRESS',
+                            meta={
+                                'progress': progress,
+                                'processed_rows': int(processed_count),
+                                'total_rows': int(rows_to_process),
+                                'error_count': int(error_count),
+                                'stage': 'processing',
+                                'message': f'Processing row {processed_count}/{rows_to_process}...',
+                                'estimated_time_remaining': estimated_remaining
+                            }
+                        )
+                    
+                except Exception as e:
+                    logger.error(f"Failed to process row {chunk_idx}: {e}")
                     error_count += 1
-                
-            except Exception as e:
-                logger.error(f"Failed to process row {idx}: {e}")
-                error_count += 1
         
-        # Add results to dataframe
-        df['TNVED_Code'] = ''
-        df['Selection_Reason'] = ''
+        # Add results to original dataframe
+        df_original['TNVED_Code'] = ''
+        df_original['Selection_Reason'] = ''
+        
+        # Count successful and failed assignments
+        successful_assignments = 0
+        failed_assignments = 0
         
         for result in results:
-            if result.row_index < len(df):
-                df.loc[result.row_index, 'TNVED_Code'] = result.tnved_code or ''
-                df.loc[result.row_index, 'Selection_Reason'] = result.selection_reason
+            if result.row_index < len(df_original):
+                df_original.loc[result.row_index, 'TNVED_Code'] = result.tnved_code or ''
+                df_original.loc[result.row_index, 'Selection_Reason'] = result.selection_reason
+                
+                # Count success/failure
+                if result.is_successful() and result.tnved_code:
+                    successful_assignments += 1
+                else:
+                    failed_assignments += 1
         
         # Create session directory and save the processed file
         session_dir = file_manager.create_session_directory(session_id)
         output_path = file_manager.save_processed_file(
             session_id,
-            df,
+            df_original,
             file_path_obj.name
         )
         
@@ -192,6 +288,14 @@ def process_file_sync(
         processing_time = end_time - start_time
         
         logger.info(f"Synchronous processing completed in {processing_time:.2f} seconds")
+        
+        # Update final progress
+        progress_tracker.create_task_completed_update(
+            task_id=sync_task_id,
+            processed_rows=int(processed_count),
+            error_count=int(error_count),
+            message=f"Processing completed successfully. {processed_count} rows processed."
+        )
         
         # Log processing completion
         structured_logger.log_processing_complete(
@@ -211,14 +315,38 @@ def process_file_sync(
             "processed_rows": processed_count,
             "total_rows": total_rows,
             "error_count": error_count,
+            "successful_assignments": successful_assignments,
+            "failed_assignments": failed_assignments,
             "processing_time_seconds": processing_time,
             "algorithm_used": algorithm,
             "processing_mode": process_mode,
-            "message": f"File processed successfully with {processed_count} TNVED codes assigned"
+            "message": f"File processed successfully with {successful_assignments} TNVED codes assigned"
         }
         
     except Exception as e:
         logger.error(f"Synchronous processing failed: {e}", exc_info=True)
+        
+        # Update progress to indicate failure
+        try:
+            progress_tracker.create_task_failed_update(
+                task_id=sync_task_id,
+                error_message=str(e),
+                processed_rows=processed_count if 'processed_count' in locals() else 0
+            )
+        except:
+            pass  # Don't let progress update errors break error handling
+        
+        # Check if it's a recursion error
+        if "maximum recursion depth exceeded" in str(e):
+            logger.error("RECURSION ERROR DETECTED in synchronous processing!")
+            logger.error(f"Error type: {type(e)}")
+            logger.error(f"Error args: {e.args}")
+            
+            # Try to get more details about the recursion
+            import traceback
+            tb_str = traceback.format_exc()
+            logger.error(f"Full traceback: {tb_str}")
+        
         structured_logger.log_error(e, {
             "session_id": session_id,
             "file_path": file_path,
@@ -309,12 +437,12 @@ class ProcessingTask(Task):
     - Real-time progress tracking
     - Configurable processing algorithms
     - Comprehensive error handling
-    - Automatic retry on transient failures
     """
     
-    # Task configuration
-    autoretry_for = (ConnectionError, TimeoutError)
-    retry_kwargs = {'max_retries': 3, 'countdown': 60}
+    # Task configuration - DISABLED autoretry to prevent recursion
+    # autoretry_for = (ConnectionError, TimeoutError)
+    # retry_kwargs = {'max_retries': 3, 'countdown': 60}
+    max_retries = 0  # Disable retries to prevent recursion
     soft_time_limit = 1800  # 30 minutes
     time_limit = 2400       # 40 minutes
     
@@ -804,8 +932,8 @@ class ProcessingTask(Task):
             raise ProcessingTaskError(error_msg)
 
 
-# Register the task with Celery
-@celery_app.task(bind=True, base=ProcessingTask, name='batch_processor.workers.processing_task.process_excel_file')
+# Register the task with Celery - simple function without class inheritance to avoid recursion
+@celery_app.task(name='batch_processor.workers.processing_task.process_excel_file', bind=True, max_retries=0)
 def process_excel_file(
     self,
     session_id: str,
@@ -829,7 +957,16 @@ def process_excel_file(
     Returns:
         Dictionary with processing results
     """
-    return self.run(session_id, file_path, process_mode, algorithm, user, **kwargs)
+    # Use synchronous processing function directly to avoid any Celery recursion issues
+    return process_file_sync(
+        session_id=session_id,
+        file_path=file_path,
+        process_mode=process_mode,
+        algorithm=algorithm,
+        user=user,
+        celery_task=self,  # Pass Celery task context for progress updates
+        **kwargs
+    )
 
 
 # Convenience function for task creation
@@ -858,10 +995,12 @@ def create_processing_task(
         f"algorithm={algorithm}, mode={process_mode}"
     )
     
-    return process_excel_file.delay(
-        session_id=session_id,
-        file_path=file_path,
-        process_mode=process_mode,
-        algorithm=algorithm,
-        **kwargs
+    # Import here to avoid circular imports
+    from batch_processor.workers.celery_app import celery_app
+    
+    # Use send_task to avoid recursion
+    return celery_app.send_task(
+        'batch_processor.workers.processing_task.process_excel_file',
+        args=[session_id, file_path, process_mode, algorithm],
+        kwargs=kwargs
     )

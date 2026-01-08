@@ -103,7 +103,7 @@ def test_processing_with_monitoring():
             print("✅ Validation successful!")
         
         # Now try processing
-        url_process = "http://localhost:8000/upload/process"
+        url_process = "http://localhost:8000/upload/"
         
         with open("GUOO-Manifest--777Bags.xlsx", "rb") as f:
             files = {"file": ("test.xlsx", f, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}

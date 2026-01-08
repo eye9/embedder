@@ -41,7 +41,19 @@ _sync_results = {}
 
 def _store_sync_result(task_id: str, result: dict) -> None:
     """Store synchronous processing result for later retrieval."""
-    _sync_results[task_id] = result
+    try:
+        # Ensure result is JSON serializable to avoid recursion issues
+        import json
+        json.dumps(result)  # Test serialization
+        _sync_results[task_id] = result
+    except (TypeError, ValueError, RecursionError) as e:
+        logger.error(f"Failed to store sync result due to serialization error: {e}")
+        # Store a safe fallback result
+        _sync_results[task_id] = {
+            "status": "failed",
+            "error": f"Result serialization failed: {str(e)}",
+            "stage": "result_storage"
+        }
 
 def _get_sync_result(task_id: str) -> dict:
     """Get synchronous processing result."""
@@ -290,11 +302,27 @@ async def upload_file(
                 
             except Exception as sync_error:
                 logger.error(f"Synchronous processing failed: {sync_error}")
+                
+                # Check for recursion error and handle it specially
+                error_msg = str(sync_error)
+                if "maximum recursion depth exceeded" in error_msg or isinstance(sync_error, RecursionError):
+                    logger.error("RECURSION ERROR detected in synchronous processing!")
+                    error_msg = "Processing failed due to system recursion limit. Please try with a smaller file or contact support."
+                
                 # Clean up file on processing failure
                 file_manager.cleanup_session(session_id)
+                
+                # Store the error result for task status checking
+                error_result = {
+                    "status": "failed",
+                    "error": error_msg,
+                    "stage": "synchronous_processing"
+                }
+                _store_sync_result(sync_task_id, error_result)
+                
                 raise HTTPException(
                     status_code=500,
-                    detail=f"File processing failed: {str(sync_error)}"
+                    detail=f"File processing failed: {error_msg}"
                 )
         
     except HTTPException:

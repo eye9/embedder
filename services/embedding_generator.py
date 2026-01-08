@@ -9,8 +9,6 @@ import logging
 from typing import List, Union
 import numpy as np
 import torch
-from sentence_transformers import SentenceTransformer
-
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +60,8 @@ class EmbeddingGenerator:
         
         # Load the model from HuggingFace
         try:
+            # Import SentenceTransformer only when needed to avoid circular imports
+            from sentence_transformers import SentenceTransformer
             self.model = SentenceTransformer(model_name, device=device)
             logger.info(f"Successfully loaded model {model_name}")
         except Exception as e:
