@@ -1,0 +1,139 @@
+# Staging Configuration for Batch Excel Processor
+
+# Redis configuration for task queue and caching
+redis:
+  host: "${REDIS_HOST:-localhost}"
+  port: ${REDIS_PORT:-6379}
+  db: ${REDIS_DB:-1}  # Different DB for staging
+  password: "${REDIS_PASSWORD:-}"
+
+# Celery configuration for background processing
+celery:
+  broker_url: "${CELERY_BROKER_URL:-redis://localhost:6379/1}"
+  result_backend: "${CELERY_RESULT_BACKEND:-redis://localhost:6379/1}"
+  task_serializer: "json"
+  accept_content: ["json"]
+  result_serializer: "json"
+  timezone: "UTC"
+  enable_utc: true
+  worker_prefetch_multiplier: 1
+  task_acks_late: true
+  worker_max_tasks_per_child: 500
+
+# Processing configuration
+processing:
+  chunk_size: ${CHUNK_SIZE:-1000}
+  default_algorithm: "${DEFAULT_ALGORITHM:-similarity_top1}"
+  confidence_threshold: ${CONFIDENCE_THRESHOLD:-0.7}
+  llm_top_k: ${LLM_TOP_K:-5}
+  max_file_size_mb: ${MAX_FILE_SIZE_MB:-100}
+  supported_extensions: [".xlsx", ".xls"]
+  required_columns: ["Product Detailed Description"]
+  output_columns: ["TNVED_Code", "Selection_Reason"]
+
+# Security settings - Moderate for staging
+security:
+  session_timeout_hours: 12
+  max_concurrent_uploads: 10
+  allowed_hosts: 
+    - "${ALLOWED_HOST:-localhost}"
+    - "${STAGING_DOMAIN:-staging.batch-processor.local}"
+  cors_origins:
+    - "https://${STAGING_DOMAIN:-staging.batch-processor.local}"
+    - "http://localhost:8000"
+  rate_limiting:
+    enabled: true
+    requests_per_minute: 120
+    burst_size: 20
+  csrf_protection: true
+  secure_cookies: false  # Allow HTTP for staging
+  https_only: false
+
+# File management
+files:
+  temp_dir: "${TEMP_DIR:-/app/temp_files}"
+  cleanup_interval_hours: ${CLEANUP_INTERVAL_HOURS:-1}
+  max_storage_gb: ${MAX_STORAGE_GB:-10.0}
+  auto_cleanup_enabled: ${AUTO_CLEANUP_ENABLED:-true}
+  max_files_per_user: 5
+  quarantine_suspicious_files: false
+
+# Web application settings
+web:
+  host: "${WEB_HOST:-0.0.0.0}"
+  port: ${WEB_PORT:-8000}
+  debug: ${DEBUG:-false}
+  reload: false
+  workers: ${WEB_WORKERS:-1}
+  log_level: "${LOG_LEVEL:-info}"
+  access_log: true
+  server_header: true  # Show server info in staging
+  proxy_headers: true
+
+# Authentication settings
+auth:
+  enabled: ${AUTH_ENABLED:-true}
+  users:
+    admin: "${ADMIN_PASSWORD:-staging123}"
+    tester: "${TESTER_PASSWORD:-test123}"
+    operator: "${OPERATOR_PASSWORD:-operator123}"
+  session_secret: "${SESSION_SECRET_KEY:-staging-secret-key}"
+  password_policy:
+    min_length: 8
+    require_uppercase: false
+    require_lowercase: false
+    require_numbers: false
+    require_special_chars: false
+  session_security:
+    secure_cookies: false
+    httponly_cookies: true
+    samesite: "lax"
+    regenerate_on_login: true
+  failed_login_protection:
+    max_attempts: 10
+    lockout_duration_minutes: 5
+    track_by_ip: true
+
+# Logging configuration
+logging:
+  level: "${LOG_LEVEL:-info}"
+  format: "[%(asctime)s] %(levelname)s [%(name)s:%(lineno)d] %(message)s"
+  file_enabled: true
+  file_path: "${LOG_DIR:-/app/logs}/batch_processor_staging.log"
+  max_file_size_mb: 100
+  backup_count: 5
+  structured_logging: true
+  log_requests: true
+  log_errors_only: false
+  sensitive_data_masking: false  # Allow full logging in staging
+
+# Monitoring and health checks
+monitoring:
+  enabled: true
+  health_check_interval: 30
+  metrics_enabled: true
+  performance_tracking: true
+  error_tracking: true
+  alerts:
+    enabled: false  # Disable alerts in staging
+    error_threshold: 50
+    response_time_threshold_ms: 10000
+    disk_usage_threshold_percent: 90
+    memory_usage_threshold_percent: 95
+
+# Performance optimization
+performance:
+  connection_pool_size: 10
+  max_connections: 50
+  request_timeout_seconds: 600
+  worker_timeout_seconds: 3600
+  enable_compression: false
+  cache_static_files: false
+  
+# Feature flags - Enable more features for testing
+features:
+  llm_integration: ${ENABLE_LLM:-true}
+  advanced_analytics: ${ENABLE_ANALYTICS:-true}
+  batch_notifications: ${ENABLE_NOTIFICATIONS:-true}
+  api_versioning: true
+  swagger_ui: true  # Enabled in staging for testing

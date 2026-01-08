@@ -1,0 +1,80 @@
+# Docker-specific configuration for Batch Excel Processor
+
+# Redis configuration for task queue and caching
+redis:
+  host: "${REDIS_HOST:-redis}"
+  port: ${REDIS_PORT:-6379}
+  db: ${REDIS_DB:-0}
+  password: "${REDIS_PASSWORD:-}"
+
+# Celery configuration for background processing
+celery:
+  broker_url: "${CELERY_BROKER_URL:-redis://redis:6379/0}"
+  result_backend: "${CELERY_RESULT_BACKEND:-redis://redis:6379/0}"
+  task_serializer: "json"
+  accept_content: ["json"]
+  result_serializer: "json"
+  timezone: "UTC"
+  enable_utc: true
+  worker_prefetch_multiplier: 1
+  task_acks_late: true
+  worker_max_tasks_per_child: 1000
+
+# Processing configuration
+processing:
+  chunk_size: ${CHUNK_SIZE:-1000}
+  default_algorithm: "${DEFAULT_ALGORITHM:-similarity_top1}"
+  confidence_threshold: ${CONFIDENCE_THRESHOLD:-0.7}
+  llm_top_k: ${LLM_TOP_K:-5}
+  max_file_size_mb: ${MAX_FILE_SIZE_MB:-100}
+  supported_extensions: [".xlsx", ".xls"]
+  required_columns: ["Product Detailed Description"]
+  output_columns: ["TNVED_Code", "Selection_Reason"]
+
+# Security settings
+security:
+  session_timeout_hours: 24
+  max_concurrent_uploads: 10
+  allowed_hosts: ["*"]
+  cors_origins: ["*"]
+
+# File management
+files:
+  temp_dir: "${TEMP_DIR:-/app/temp_files}"
+  cleanup_interval_hours: ${CLEANUP_INTERVAL_HOURS:-1}
+  max_storage_gb: 10.0
+  auto_cleanup_enabled: ${AUTO_CLEANUP_ENABLED:-true}
+
+# Web application settings
+web:
+  host: "${WEB_HOST:-0.0.0.0}"
+  port: ${WEB_PORT:-8000}
+  debug: false
+  reload: false
+  workers: ${WEB_WORKERS:-1}
+  log_level: "${LOG_LEVEL:-info}"
+
+# Authentication settings
+auth:
+  enabled: ${AUTH_ENABLED:-true}
+  users:
+    admin: "admin123"
+    user: "password"
+  session_secret: "${SESSION_SECRET_KEY:-change-this-secret-key-in-production-docker}"
+
+# Logging configuration
+logging:
+  level: "${LOG_LEVEL:-info}"
+  format: "[%(asctime)s] %(levelname)s in %(module)s: %(message)s"
+  file_enabled: true
+  file_path: "${LOG_DIR:-/app/logs}/batch_processor.log"
+  max_file_size_mb: 100
+  backup_count: 5
+
+# Health check configuration
+health:
+  enabled: ${HEALTH_CHECK_ENABLED:-true}
+  check_redis: true
+  check_celery: true
+  check_disk_space: true
+  check_memory: true

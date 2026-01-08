@@ -1,0 +1,50 @@
+version: '3.8'
+
+# Development override for docker-compose.yml
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+services:
+  web:
+    build:
+      target: development
+    environment:
+      - BATCH_PROCESSOR_ENV=development
+    volumes:
+      - .:/app
+      - ./temp_files:/app/temp_files
+      - ./chroma_db:/app/chroma_db
+      - ./logs:/app/logs
+    command: python -m uvicorn batch_processor.web.app:app --host 0.0.0.0 --port 8000 --reload
+
+  worker:
+    build:
+      target: development
+    environment:
+      - BATCH_PROCESSOR_ENV=development
+    volumes:
+      - .:/app
+      - ./temp_files:/app/temp_files
+      - ./chroma_db:/app/chroma_db
+      - ./logs:/app/logs
+    command: celery -A batch_processor.workers.celery_app worker --loglevel=debug --queues=processing,default
+
+  cleanup_worker:
+    build:
+      target: development
+    environment:
+      - BATCH_PROCESSOR_ENV=development
+    volumes:
+      - .:/app
+      - ./temp_files:/app/temp_files
+      - ./logs:/app/logs
+    command: celery -A batch_processor.workers.celery_app worker --loglevel=debug --queues=cleanup
+
+  scheduler:
+    build:
+      target: development
+    environment:
+      - BATCH_PROCESSOR_ENV=development
+    volumes:
+      - .:/app
+      - ./logs:/app/logs
+    command: celery -A batch_processor.workers.celery_app beat --loglevel=debug

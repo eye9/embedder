@@ -10,78 +10,156 @@ services:
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes
-    restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - batch_processor_network
 
-  # Web application
+  # Web application service
   web:
-    build: .
+    build:
+      context: .
+      target: production
     container_name: batch_processor_web
     ports:
       - "8000:8000"
     environment:
+      - BATCH_PROCESSOR_CONFIG=/app/batch_processor_config.yaml
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - TEMP_DIR=/app/temp_files
-      - DEBUG=false
     volumes:
       - ./temp_files:/app/temp_files
       - ./chroma_db:/app/chroma_db
+      - ./logs:/app/logs
       - ./batch_processor_config.yaml:/app/batch_processor_config.yaml
     depends_on:
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     restart: unless-stopped
-    command: uvicorn batch_processor.web.app:app --host 0.0.0.0 --port 8000
+    networks:
+      - batch_processor_network
 
-  # Celery worker for background processing
+  # Celery worker for processing tasks
   worker:
-    build: .
+    build:
+      context: .
+      target: production
     container_name: batch_processor_worker
+    command: celery -A batch_processor.workers.celery_app worker --loglevel=info --queues=processing,default
     environment:
+      - BATCH_PROCESSOR_CONFIG=/app/batch_processor_config.yaml
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - TEMP_DIR=/app/temp_files
     volumes:
       - ./temp_files:/app/temp_files
       - ./chroma_db:/app/chroma_db
+      - ./logs:/app/logs
       - ./batch_processor_config.yaml:/app/batch_processor_config.yaml
     depends_on:
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "celery", "-A", "batch_processor.workers.celery_app", "inspect", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     restart: unless-stopped
-    command: celery -A batch_processor.workers.celery_app worker --loglevel=info --concurrency=2
+    networks:
+      - batch_processor_network
 
-  # Celery beat for scheduled tasks (cleanup, monitoring)
-  beat:
-    build: .
-    container_name: batch_processor_beat
+  # Celery worker for cleanup tasks
+  cleanup_worker:
+    build:
+      context: .
+      target: production
+    container_name: batch_processor_cleanup_worker
+    command: celery -A batch_processor.workers.celery_app worker --loglevel=info --queues=cleanup
     environment:
+      - BATCH_PROCESSOR_CONFIG=/app/batch_processor_config.yaml
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
     volumes:
       - ./temp_files:/app/temp_files
+      - ./logs:/app/logs
+      - ./batch_processor_config.yaml:/app/batch_processor_config.yaml
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "celery", "-A", "batch_processor.workers.celery_app", "inspect", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - batch_processor_network
+
+  # Celery beat scheduler for periodic tasks
+  scheduler:
+    build:
+      context: .
+      target: production
+    container_name: batch_processor_scheduler
+    command: celery -A batch_processor.workers.celery_app beat --loglevel=info
+    environment:
+      - BATCH_PROCESSOR_CONFIG=/app/batch_processor_config.yaml
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    volumes:
+      - ./logs:/app/logs
       - ./batch_processor_config.yaml:/app/batch_processor_config.yaml
     depends_on:
       redis:
         condition: service_healthy
     restart: unless-stopped
-    command: celery -A batch_processor.workers.celery_app beat --loglevel=info
+    networks:
+      - batch_processor_network
+
+  # Flower for monitoring Celery tasks (optional)
+  flower:
+    build:
+      context: .
+      target: production
+    container_name: batch_processor_flower
+    command: celery -A batch_processor.workers.celery_app flower --port=5555
+    ports:
+      - "5555:5555"
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - batch_processor_network
+    profiles:
+      - monitoring
 
 volumes:
   redis_data:
     driver: local
 
 networks:
-  default:
-    name: batch_processor_network
+  batch_processor_network:
+    driver: bridge

@@ -1,0 +1,147 @@
+# Production Configuration for Batch Excel Processor
+
+# Redis configuration for task queue and caching
+redis:
+  host: "${REDIS_HOST:-localhost}"
+  port: ${REDIS_PORT:-6379}
+  db: ${REDIS_DB:-0}
+  password: "${REDIS_PASSWORD:-}"
+
+# Celery configuration for background processing
+celery:
+  broker_url: "${CELERY_BROKER_URL:-redis://localhost:6379/0}"
+  result_backend: "${CELERY_RESULT_BACKEND:-redis://localhost:6379/0}"
+  task_serializer: "json"
+  accept_content: ["json"]
+  result_serializer: "json"
+  timezone: "UTC"
+  enable_utc: true
+  worker_prefetch_multiplier: 1
+  task_acks_late: true
+  worker_max_tasks_per_child: 1000
+
+# Processing configuration
+processing:
+  chunk_size: ${CHUNK_SIZE:-500}  # Smaller chunks for production stability
+  default_algorithm: "${DEFAULT_ALGORITHM:-similarity_top1}"
+  confidence_threshold: ${CONFIDENCE_THRESHOLD:-0.75}  # Higher threshold for production
+  llm_top_k: ${LLM_TOP_K:-3}  # Fewer results for faster processing
+  max_file_size_mb: ${MAX_FILE_SIZE_MB:-50}  # Smaller limit for production
+  supported_extensions: [".xlsx", ".xls"]
+  required_columns: ["Product Detailed Description"]
+  output_columns: ["TNVED_Code", "Selection_Reason"]
+
+# Security settings - Enhanced for production
+security:
+  session_timeout_hours: 8  # Shorter session timeout
+  max_concurrent_uploads: 5  # Limit concurrent uploads
+  allowed_hosts: 
+    - "${ALLOWED_HOST:-localhost}"
+    - "${DOMAIN:-batch-processor.local}"
+  cors_origins:
+    - "https://${DOMAIN:-batch-processor.local}"
+    - "http://localhost:8000"  # For development access
+  rate_limiting:
+    enabled: true
+    requests_per_minute: 60
+    burst_size: 10
+  csrf_protection: true
+  secure_cookies: true
+  https_only: ${HTTPS_ONLY:-false}
+
+# File management - Production optimized
+files:
+  temp_dir: "${TEMP_DIR:-/app/temp_files}"
+  cleanup_interval_hours: ${CLEANUP_INTERVAL_HOURS:-2}  # More frequent cleanup
+  max_storage_gb: ${MAX_STORAGE_GB:-5.0}  # Smaller storage limit
+  auto_cleanup_enabled: ${AUTO_CLEANUP_ENABLED:-true}
+  max_files_per_user: 3  # Limit files per user
+  quarantine_suspicious_files: true
+
+# Web application settings - Production hardened
+web:
+  host: "${WEB_HOST:-0.0.0.0}"
+  port: ${WEB_PORT:-8000}
+  debug: false  # Always false in production
+  reload: false  # Always false in production
+  workers: ${WEB_WORKERS:-2}  # Multiple workers for production
+  log_level: "${LOG_LEVEL:-warning}"  # Less verbose logging
+  access_log: true
+  server_header: false  # Hide server information
+  proxy_headers: true  # Trust proxy headers
+
+# Authentication settings - Enhanced security
+auth:
+  enabled: ${AUTH_ENABLED:-true}
+  users:
+    admin: "${ADMIN_PASSWORD:-}"  # Must be set via environment
+    operator: "${OPERATOR_PASSWORD:-}"  # Optional operator user
+  session_secret: "${SESSION_SECRET_KEY:-}"  # Must be set via environment
+  password_policy:
+    min_length: 12
+    require_uppercase: true
+    require_lowercase: true
+    require_numbers: true
+    require_special_chars: true
+  session_security:
+    secure_cookies: ${SECURE_COOKIES:-true}
+    httponly_cookies: true
+    samesite: "strict"
+    regenerate_on_login: true
+  failed_login_protection:
+    max_attempts: 5
+    lockout_duration_minutes: 15
+    track_by_ip: true
+
+# Logging configuration - Production ready
+logging:
+  level: "${LOG_LEVEL:-warning}"
+  format: "[%(asctime)s] %(levelname)s [%(name)s:%(lineno)d] %(message)s"
+  file_enabled: true
+  file_path: "${LOG_DIR:-/app/logs}/batch_processor.log"
+  max_file_size_mb: 50
+  backup_count: 10
+  structured_logging: true
+  log_requests: true
+  log_errors_only: false
+  sensitive_data_masking: true
+
+# Monitoring and health checks
+monitoring:
+  enabled: true
+  health_check_interval: 30
+  metrics_enabled: true
+  performance_tracking: true
+  error_tracking: true
+  alerts:
+    enabled: true
+    error_threshold: 10  # Alert after 10 errors
+    response_time_threshold_ms: 5000
+    disk_usage_threshold_percent: 85
+    memory_usage_threshold_percent: 90
+
+# Performance optimization
+performance:
+  connection_pool_size: 20
+  max_connections: 100
+  request_timeout_seconds: 300  # 5 minutes
+  worker_timeout_seconds: 1800  # 30 minutes
+  enable_compression: true
+  cache_static_files: true
+  
+# Backup and recovery
+backup:
+  enabled: ${BACKUP_ENABLED:-false}
+  interval_hours: 24
+  retention_days: 7
+  backup_path: "${BACKUP_DIR:-/app/backups}"
+  include_logs: true
+  include_temp_files: false
+
+# Feature flags
+features:
+  llm_integration: ${ENABLE_LLM:-false}
+  advanced_analytics: ${ENABLE_ANALYTICS:-false}
+  batch_notifications: ${ENABLE_NOTIFICATIONS:-false}
+  api_versioning: true
+  swagger_ui: false  # Disabled in production

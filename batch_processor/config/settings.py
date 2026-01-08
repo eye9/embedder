@@ -70,12 +70,51 @@ class ProcessingConfig:
 
 
 @dataclass
+class RateLimitConfig:
+    """Rate limiting configuration."""
+    enabled: bool = False
+    requests_per_minute: int = 60
+    burst_size: int = 10
+
+
+@dataclass
+class PasswordPolicyConfig:
+    """Password policy configuration."""
+    min_length: int = 8
+    require_uppercase: bool = False
+    require_lowercase: bool = False
+    require_numbers: bool = False
+    require_special_chars: bool = False
+
+
+@dataclass
+class SessionSecurityConfig:
+    """Session security configuration."""
+    secure_cookies: bool = False
+    httponly_cookies: bool = True
+    samesite: str = "lax"
+    regenerate_on_login: bool = True
+
+
+@dataclass
+class FailedLoginProtectionConfig:
+    """Failed login protection configuration."""
+    max_attempts: int = 5
+    lockout_duration_minutes: int = 15
+    track_by_ip: bool = True
+
+
+@dataclass
 class SecurityConfig:
     """Security configuration settings."""
     session_timeout_hours: int = 24
     max_concurrent_uploads: int = 10
     allowed_hosts: List[str] = field(default_factory=lambda: ["*"])
     cors_origins: List[str] = field(default_factory=lambda: ["*"])
+    rate_limiting: RateLimitConfig = field(default_factory=RateLimitConfig)
+    csrf_protection: bool = False
+    secure_cookies: bool = False
+    https_only: bool = False
 
 
 @dataclass
@@ -85,6 +124,8 @@ class FileConfig:
     cleanup_interval_hours: int = 1
     max_storage_gb: float = 10.0
     auto_cleanup_enabled: bool = True
+    max_files_per_user: int = 10
+    quarantine_suspicious_files: bool = False
 
 
 @dataclass
@@ -96,6 +137,9 @@ class WebConfig:
     reload: bool = False
     workers: int = 1
     log_level: str = "info"
+    access_log: bool = True
+    server_header: bool = True
+    proxy_headers: bool = False
 
 
 @dataclass
@@ -104,6 +148,77 @@ class AuthConfig:
     enabled: bool = True
     users: Dict[str, str] = field(default_factory=lambda: {"admin": "admin123"})  # username: password
     session_secret: str = "change-this-secret-key"
+    password_policy: PasswordPolicyConfig = field(default_factory=PasswordPolicyConfig)
+    session_security: SessionSecurityConfig = field(default_factory=SessionSecurityConfig)
+    failed_login_protection: FailedLoginProtectionConfig = field(default_factory=FailedLoginProtectionConfig)
+
+
+@dataclass
+class LoggingConfig:
+    """Logging configuration."""
+    level: str = "info"
+    format: str = "[%(asctime)s] %(levelname)s in %(module)s: %(message)s"
+    file_enabled: bool = True
+    file_path: str = "./logs/batch_processor.log"
+    max_file_size_mb: int = 100
+    backup_count: int = 5
+    structured_logging: bool = False
+    log_requests: bool = True
+    log_errors_only: bool = False
+    sensitive_data_masking: bool = True
+
+
+@dataclass
+class AlertConfig:
+    """Alert configuration."""
+    enabled: bool = False
+    error_threshold: int = 10
+    response_time_threshold_ms: int = 5000
+    disk_usage_threshold_percent: int = 85
+    memory_usage_threshold_percent: int = 90
+
+
+@dataclass
+class MonitoringConfig:
+    """Monitoring configuration."""
+    enabled: bool = True
+    health_check_interval: int = 30
+    metrics_enabled: bool = True
+    performance_tracking: bool = True
+    error_tracking: bool = True
+    alerts: AlertConfig = field(default_factory=AlertConfig)
+
+
+@dataclass
+class PerformanceConfig:
+    """Performance optimization configuration."""
+    connection_pool_size: int = 10
+    max_connections: int = 50
+    request_timeout_seconds: int = 300
+    worker_timeout_seconds: int = 1800
+    enable_compression: bool = False
+    cache_static_files: bool = False
+
+
+@dataclass
+class BackupConfig:
+    """Backup and recovery configuration."""
+    enabled: bool = False
+    interval_hours: int = 24
+    retention_days: int = 7
+    backup_path: str = "./backups"
+    include_logs: bool = True
+    include_temp_files: bool = False
+
+
+@dataclass
+class FeatureConfig:
+    """Feature flags configuration."""
+    llm_integration: bool = False
+    advanced_analytics: bool = False
+    batch_notifications: bool = False
+    api_versioning: bool = True
+    swagger_ui: bool = True
 
 
 @dataclass
@@ -116,6 +231,11 @@ class BatchProcessorConfig:
     files: FileConfig = field(default_factory=FileConfig)
     web: WebConfig = field(default_factory=WebConfig)
     auth: AuthConfig = field(default_factory=AuthConfig)
+    logging: LoggingConfig = field(default_factory=LoggingConfig)
+    monitoring: MonitoringConfig = field(default_factory=MonitoringConfig)
+    performance: PerformanceConfig = field(default_factory=PerformanceConfig)
+    backup: BackupConfig = field(default_factory=BackupConfig)
+    features: FeatureConfig = field(default_factory=FeatureConfig)
     
     @classmethod
     def from_yaml(cls, config_path: str) -> "BatchProcessorConfig":
@@ -152,6 +272,10 @@ class BatchProcessorConfig:
         # Update security config
         if "security" in data:
             sec_data = data["security"]
+            # Handle nested rate_limiting config
+            if "rate_limiting" in sec_data:
+                rate_limit_data = sec_data.pop("rate_limiting")
+                sec_data["rate_limiting"] = RateLimitConfig(**rate_limit_data)
             config.security = SecurityConfig(**sec_data)
         
         # Update file config
@@ -167,7 +291,46 @@ class BatchProcessorConfig:
         # Update auth config
         if "auth" in data:
             auth_data = data["auth"]
+            # Handle nested auth configs
+            if "password_policy" in auth_data:
+                policy_data = auth_data.pop("password_policy")
+                auth_data["password_policy"] = PasswordPolicyConfig(**policy_data)
+            if "session_security" in auth_data:
+                session_data = auth_data.pop("session_security")
+                auth_data["session_security"] = SessionSecurityConfig(**session_data)
+            if "failed_login_protection" in auth_data:
+                protection_data = auth_data.pop("failed_login_protection")
+                auth_data["failed_login_protection"] = FailedLoginProtectionConfig(**protection_data)
             config.auth = AuthConfig(**auth_data)
+        
+        # Update logging config
+        if "logging" in data:
+            logging_data = data["logging"]
+            config.logging = LoggingConfig(**logging_data)
+        
+        # Update monitoring config
+        if "monitoring" in data:
+            monitoring_data = data["monitoring"]
+            # Handle nested alerts config
+            if "alerts" in monitoring_data:
+                alerts_data = monitoring_data.pop("alerts")
+                monitoring_data["alerts"] = AlertConfig(**alerts_data)
+            config.monitoring = MonitoringConfig(**monitoring_data)
+        
+        # Update performance config
+        if "performance" in data:
+            perf_data = data["performance"]
+            config.performance = PerformanceConfig(**perf_data)
+        
+        # Update backup config
+        if "backup" in data:
+            backup_data = data["backup"]
+            config.backup = BackupConfig(**backup_data)
+        
+        # Update features config
+        if "features" in data:
+            features_data = data["features"]
+            config.features = FeatureConfig(**features_data)
         
         return config
     
