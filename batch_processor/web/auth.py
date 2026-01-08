@@ -74,28 +74,6 @@ class SessionManager:
         """
         return self._session_files.get(session_id, [])
     
-    def create_session(self, username: str) -> str:
-        """
-        Create a new session for authenticated user.
-        
-        Args:
-            username: Authenticated username
-            
-        Returns:
-            Session ID
-        """
-        session_id = str(uuid.uuid4())
-        config = get_config()
-        
-        self._sessions[session_id] = {
-            "username": username,
-            "created_at": datetime.utcnow(),
-            "expires_at": datetime.utcnow() + timedelta(hours=config.security.session_timeout_hours),
-            "last_activity": datetime.utcnow()
-        }
-        
-        return session_id
-    
     def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
         """
         Get session information by session ID.

@@ -113,11 +113,25 @@ async def validate_excel_content(file_path: Path) -> ValidationResult:
         # Get detailed file information
         file_info = excel_processor.get_file_info(file_path)
         
+        # Convert numpy types to Python types for Pydantic serialization
+        def convert_numpy_types(obj):
+            """Convert numpy types to Python types recursively."""
+            if hasattr(obj, 'item'):  # numpy scalar
+                return obj.item()
+            elif isinstance(obj, dict):
+                return {k: convert_numpy_types(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [convert_numpy_types(item) for item in obj]
+            else:
+                return obj
+        
+        file_info = convert_numpy_types(file_info)
+        
         return ValidationResult(
             is_valid=True,
-            total_rows=file_info["total_rows"],
-            rows_with_descriptions=file_info["rows_with_descriptions"],
-            rows_with_existing_codes=file_info["rows_with_existing_codes"],
+            total_rows=int(file_info["total_rows"]),
+            rows_with_descriptions=int(file_info["rows_with_descriptions"]),
+            rows_with_existing_codes=int(file_info["rows_with_existing_codes"]),
             missing_columns=[],
             file_info=file_info
         )
@@ -172,10 +186,6 @@ async def upload_file(
                 error_message=error_msg
             )
             raise HTTPException(status_code=400, detail=error_msg)
-        # Validate file format and basic properties
-        is_valid, error_msg, file_info = validate_uploaded_file(file)
-        if not is_valid:
-            raise HTTPException(status_code=400, detail=error_msg)
         
         # Create session and save file
         session_id = str(uuid.uuid4())
@@ -211,7 +221,7 @@ async def upload_file(
         # Try to create processing task, fallback to synchronous processing if Celery unavailable
         try:
             task_result = celery_app.send_task(
-                'batch_processor.workers.processing_task.process_file',
+                'batch_processor.workers.processing_task.process_excel_file',
                 args=[
                     session_id,
                     str(file_path),
@@ -243,11 +253,10 @@ async def upload_file(
             logger.warning(f"Celery task creation failed: {celery_error}. Processing synchronously.")
             
             # Fallback to synchronous processing
-            import uuid
             from ..workers.processing_task import process_file_sync
             
             # Generate a fake task ID for tracking
-            task_id = str(uuid.uuid4())
+            sync_task_id = str(uuid.uuid4())
             
             try:
                 # Process file synchronously
@@ -265,10 +274,10 @@ async def upload_file(
                 file_manager.schedule_cleanup_task(session_id)
                 
                 # Store the result for later retrieval
-                _store_sync_result(task_id, result)
+                _store_sync_result(sync_task_id, result)
                 
                 return UploadResponse(
-                    task_id=task_id,
+                    task_id=sync_task_id,
                     session_id=session_id,
                     filename=file.filename,
                     file_size=file_size,

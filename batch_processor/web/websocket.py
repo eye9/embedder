@@ -139,7 +139,7 @@ class ConnectionManager:
                 
             if self.redis_client is not None:
                 progress_tracker = ProgressTracker(self.redis_client)
-                return await progress_tracker.get_progress(task_id)
+                return await progress_tracker.get_progress_async(task_id)
             else:
                 logger.warning("Redis not available, cannot get current progress")
                 return None
@@ -215,6 +215,9 @@ async def websocket_endpoint(
             )
         
         # Keep connection alive and handle client messages
+        status_request_count = 0  # Track status requests to prevent spam
+        max_status_requests = 100  # Limit status requests per connection
+        
         while True:
             try:
                 # Wait for client messages (ping/pong, etc.)
@@ -236,11 +239,49 @@ async def websocket_endpoint(
                         )
                     
                     elif message.get("type") == "get_status":
-                        # Send current progress
-                        current_progress = await manager.get_current_progress(task_id)
-                        if current_progress:
+                        # Prevent status request spam
+                        status_request_count += 1
+                        if status_request_count > max_status_requests:
+                            error_response = {
+                                "type": "error",
+                                "message": "Too many status requests",
+                                "timestamp": datetime.utcnow().isoformat()
+                            }
                             await manager.send_personal_message(
-                                json.dumps(current_progress),
+                                json.dumps(error_response),
+                                websocket
+                            )
+                            break
+                        
+                        # Send current progress with error handling
+                        try:
+                            current_progress = await manager.get_current_progress(task_id)
+                            if current_progress:
+                                await manager.send_personal_message(
+                                    json.dumps(current_progress),
+                                    websocket
+                                )
+                            else:
+                                # Send fallback status if progress unavailable
+                                fallback_status = {
+                                    "task_id": task_id,
+                                    "status": "unknown",
+                                    "progress": 0.0,
+                                    "timestamp": datetime.utcnow().isoformat()
+                                }
+                                await manager.send_personal_message(
+                                    json.dumps(fallback_status),
+                                    websocket
+                                )
+                        except Exception as e:
+                            logger.error(f"Error getting progress for task {task_id}: {e}")
+                            error_response = {
+                                "type": "error",
+                                "message": "Failed to get task status",
+                                "timestamp": datetime.utcnow().isoformat()
+                            }
+                            await manager.send_personal_message(
+                                json.dumps(error_response),
                                 websocket
                             )
                     

@@ -142,6 +142,12 @@ async def get_task_status(
         state = task_result.state
         info = task_result.info or {}
         
+        # Handle case where info is an exception (FAILURE state)
+        if isinstance(info, Exception):
+            info = {"error": str(info)}
+        elif not isinstance(info, dict):
+            info = {"error": str(info)}
+        
         # Parse metadata
         meta = parse_task_meta(info)
         

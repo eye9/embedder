@@ -313,7 +313,6 @@ class ProcessingTask(Task):
     """
     
     # Task configuration
-    bind = True
     autoretry_for = (ConnectionError, TimeoutError)
     retry_kwargs = {'max_retries': 3, 'countdown': 60}
     soft_time_limit = 1800  # 30 minutes
@@ -358,6 +357,7 @@ class ProcessingTask(Task):
         file_path: str,
         process_mode: str,
         algorithm: str,
+        user: str = "anonymous",
         **kwargs
     ) -> Dict[str, Any]:
         """
@@ -368,6 +368,7 @@ class ProcessingTask(Task):
             file_path: Path to the Excel file to process
             process_mode: "all" or "empty_only"
             algorithm: "similarity_top1" or "llm_reasoning"
+            user: Username for logging
             **kwargs: Additional configuration parameters
             
         Returns:
@@ -375,7 +376,7 @@ class ProcessingTask(Task):
         """
         logger.info(
             f"Starting processing task: session={session_id}, "
-            f"file={file_path}, mode={process_mode}, algorithm={algorithm}"
+            f"file={file_path}, mode={process_mode}, algorithm={algorithm}, user={user}"
         )
         
         # Log processing start
@@ -811,6 +812,7 @@ def process_excel_file(
     file_path: str,
     process_mode: str = "all",
     algorithm: str = "similarity_top1",
+    user: str = "anonymous",
     **kwargs
 ) -> Dict[str, Any]:
     """
@@ -821,12 +823,13 @@ def process_excel_file(
         file_path: Path to Excel file to process
         process_mode: "all" or "empty_only"
         algorithm: "similarity_top1" or "llm_reasoning"
+        user: Username for logging
         **kwargs: Additional configuration parameters
         
     Returns:
         Dictionary with processing results
     """
-    return self.run(session_id, file_path, process_mode, algorithm, **kwargs)
+    return self.run(session_id, file_path, process_mode, algorithm, user, **kwargs)
 
 
 # Convenience function for task creation

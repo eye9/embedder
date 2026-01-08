@@ -165,15 +165,28 @@ class MetricsCollector:
     def _start_system_monitoring(self):
         """Start background thread for system metrics collection."""
         def collect_system_metrics():
+            error_count = 0
+            max_consecutive_errors = 10
+            
             while True:
                 try:
                     metrics = self._collect_system_metrics()
                     with self._lock:
                         self.system_metrics_history.append(metrics)
+                    error_count = 0  # Reset error count on success
                     time.sleep(60)  # Collect every minute
                 except Exception as e:
-                    logger.error(f"Error collecting system metrics: {e}")
-                    time.sleep(60)
+                    error_count += 1
+                    logger.error(f"Error collecting system metrics (attempt {error_count}): {e}")
+                    
+                    # Circuit breaker: stop if too many consecutive errors
+                    if error_count >= max_consecutive_errors:
+                        logger.error(f"Too many consecutive errors ({error_count}), stopping metrics collection")
+                        break
+                    
+                    # Exponential backoff for errors
+                    sleep_time = min(60 * (2 ** min(error_count - 1, 5)), 300)  # Max 5 minutes
+                    time.sleep(sleep_time)
         
         thread = threading.Thread(target=collect_system_metrics, daemon=True)
         thread.start()

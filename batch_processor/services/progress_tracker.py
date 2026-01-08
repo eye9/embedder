@@ -189,7 +189,7 @@ class ProgressTracker:
             logger.error(f"Failed to update progress for task {task_id}: {e}")
             # Don't raise the exception, just log it to avoid breaking the processing
     
-    async def get_progress(self, task_id: str) -> Optional[Dict[str, Any]]:
+    async def get_progress_async(self, task_id: str) -> Optional[Dict[str, Any]]:
         """
         Get current progress for a task (async version).
         
@@ -199,6 +199,10 @@ class ProgressTracker:
         Returns:
             Progress dictionary or None if not found
         """
+        if self.redis_client is None:
+            logger.debug(f"Redis not available, cannot get progress for task {task_id}")
+            return None
+            
         try:
             # Create async Redis client if needed
             if isinstance(self.redis_client, redis.Redis):
