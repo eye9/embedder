@@ -6,11 +6,29 @@ set -e
 # Function to wait for Redis
 wait_for_redis() {
     echo "Waiting for Redis to be ready..."
-    while ! redis-cli -h "${REDIS_HOST:-redis}" -p "${REDIS_PORT:-6379}" ping > /dev/null 2>&1; do
-        echo "Redis is unavailable - sleeping"
-        sleep 1
+    local redis_host="${REDIS_HOST:-redis}"
+    local redis_port="${REDIS_PORT:-6379}"
+    
+    while true; do
+        # Try to connect using Python redis module
+        if python3 -c "
+import redis
+try:
+    r = redis.Redis(host='$redis_host', port=$redis_port, socket_connect_timeout=2)
+    r.ping()
+    print('Redis connection successful')
+    exit(0)
+except Exception as e:
+    print(f'Redis connection failed: {e}')
+    exit(1)
+" 2>/dev/null; then
+            echo "Redis is ready!"
+            break
+        else
+            echo "Redis is unavailable - sleeping"
+            sleep 2
+        fi
     done
-    echo "Redis is ready!"
 }
 
 # Function to create necessary directories

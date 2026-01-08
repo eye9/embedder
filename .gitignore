@@ -99,3 +99,4 @@ docker-compose.override.yml
 # Config overrides (keep example configs)
 config.yaml
 !config.example.yaml
+.env.development

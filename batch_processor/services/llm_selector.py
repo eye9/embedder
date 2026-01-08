@@ -9,8 +9,16 @@ with detailed reasoning explanation.
 import logging
 import json
 from typing import Optional, List, Dict, Any
-import openai
-from openai import OpenAI
+
+# Optional import for OpenAI
+try:
+    import openai
+    from openai import OpenAI
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+    logger = logging.getLogger(__name__)
+    logger.warning("OpenAI not available. LLM functionality will be disabled.")
 
 from batch_processor.models.result import ProcessingResult
 from batch_processor.services.tnved_selector import (
@@ -77,6 +85,12 @@ class OpenAIProvider(LLMProvider):
             temperature: Sampling temperature (0.0-1.0)
             max_tokens: Maximum tokens in response
         """
+        if not OPENAI_AVAILABLE:
+            raise ImportError(
+                "OpenAI package is not installed. "
+                "Install it with: pip install openai"
+            )
+        
         self.client = OpenAI(api_key=api_key)
         self.model = model
         self.temperature = temperature
