@@ -1,0 +1,58 @@
+# Example configuration for URL-based TNVED code matching
+# This extends the existing configuration with URL processing settings
+
+# Existing configuration sections...
+model:
+  name: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+  device: "cuda"
+
+database:
+  path: "./chroma_db"
+  collection_name: "tnved"
+
+# New URL processing configuration
+url_processing:
+  # Enable/disable URL processing
+  enabled: true
+  
+  # URL search priority: "first", "only", or "disabled"
+  # - first: Try URL search first, then semantic search as fallback
+  # - only: Use only URL search, no semantic fallback
+  # - disabled: Use only semantic search, no URL processing
+  priority: "first"
+  
+  # Timeout for URL database queries (seconds)
+  timeout_seconds: 5.0
+  
+  # URL normalization settings
+  normalization:
+    enabled: true
+    remove_query_params: true
+    remove_fragments: true
+    normalize_protocol: true
+    supported_shops:
+      - "ozon"
+      - "yandex_market"
+      - "wildberries"
+      - "aliexpress"
+  
+  # Security settings
+  security:
+    enabled: true
+    validate_on_input: true
+    sanitize_for_storage: true
+    mask_sensitive_params: true
+    max_url_length: 2048
+    block_malicious_patterns: true
+  
+  # Database settings for URL mappings
+  database:
+    collection_name: "url_tnved_mapping"
+    batch_size: 100
+    enable_statistics: true
+    auto_cleanup_duplicates: false
+
+# Existing configuration sections continue...
+logging:
+  level: "INFO"
+  file: "tnved_embedder.log"
