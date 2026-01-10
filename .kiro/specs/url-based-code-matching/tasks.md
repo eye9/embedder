@@ -85,24 +85,26 @@ This implementation plan extends the existing batch Excel processor with URL-bas
 - [x] 5. Checkpoint - Core URL processing components complete
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 6. Enhance Excel processing for URL support
-  - [ ] 6.1 Extend ExcelProcessor with URL column detection
+- [x] 6. Enhance Excel processing for URL support
+  - [x] 6.1 Extend ExcelProcessor with URL column detection
     - Add URL column identification from multiple possible names
     - Implement URL extraction from Excel rows
     - Add file validation with URL column presence reporting
     - _Requirements: 1.1, 1.2_
 
-  - [ ]* 6.2 Write property test for Excel URL column detection
+  - [x] 6.2 Write property test for Excel URL column detection
+
     - **Property 1: Excel File URL Column Detection**
     - **Validates: Requirements 1.1, 1.2**
 
-  - [ ] 6.3 Implement hybrid processing logic
+  - [x] 6.3 Implement hybrid processing logic
     - Add logic to use both description and URL for code selection
     - Implement fallback to semantic-only for rows without URLs
     - Ensure backward compatibility for files without URL columns
     - _Requirements: 1.3, 1.4, 1.5_
 
-  - [ ]* 6.4 Write property test for hybrid selection strategy
+  - [x] 6.4 Write property test for hybrid selection strategy
+
     - **Property 2: Hybrid Selection Strategy**
     - **Validates: Requirements 1.3, 1.4, 1.5**
 

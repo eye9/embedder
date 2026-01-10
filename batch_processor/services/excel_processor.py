@@ -18,6 +18,8 @@ class ValidationResult:
     total_rows: int
     has_description_column: bool = False
     has_hts_code_column: bool = False
+    has_url_column: bool = False
+    url_column_name: Optional[str] = None
     empty_descriptions: int = 0
     existing_hts_codes: int = 0
 
@@ -35,6 +37,12 @@ class ExcelProcessor:
         self.chunk_size = chunk_size
         self.required_columns = ["Product Detailed Description"]
         self.optional_columns = ["HTS Code"]
+        self.url_column_names = [
+            "Link to customer's web-page with item description",
+            "URL",
+            "Product URL",
+            "Link"
+        ]
         
         logger.info(f"ExcelProcessor initialized with chunk_size={chunk_size}")
     
@@ -63,6 +71,9 @@ class ExcelProcessor:
                     hts_col = col
                     break
             
+            # Find URL column
+            url_col = self._find_url_column(df.columns)
+            
             # Count rows with descriptions
             rows_with_descriptions = 0
             if description_col:
@@ -75,15 +86,24 @@ class ExcelProcessor:
                 rows_with_existing_codes = (~df[hts_col].isna()).sum() - \
                                          (df[hts_col].astype(str).str.strip() == '').sum()
             
+            # Count rows with URLs
+            rows_with_urls = 0
+            if url_col:
+                rows_with_urls = (~df[url_col].isna()).sum() - \
+                               (df[url_col].astype(str).str.strip() == '').sum()
+            
             return {
                 "total_rows": len(df),
                 "rows_with_descriptions": rows_with_descriptions,
                 "rows_with_existing_codes": rows_with_existing_codes,
+                "rows_with_urls": rows_with_urls,
                 "columns": df.columns.tolist(),
                 "has_description_column": description_col is not None,
                 "has_hts_column": hts_col is not None,
+                "has_url_column": url_col is not None,
                 "description_column": description_col,
-                "hts_column": hts_col
+                "hts_column": hts_col,
+                "url_column": url_col
             }
             
         except Exception as e:
@@ -92,11 +112,14 @@ class ExcelProcessor:
                 "total_rows": 0,
                 "rows_with_descriptions": 0,
                 "rows_with_existing_codes": 0,
+                "rows_with_urls": 0,
                 "columns": [],
                 "has_description_column": False,
                 "has_hts_column": False,
+                "has_url_column": False,
                 "description_column": None,
-                "hts_column": None
+                "hts_column": None,
+                "url_column": None
             }
 
     def validate_file(self, file_path: Path) -> Tuple[bool, str, int]:
@@ -144,6 +167,10 @@ class ExcelProcessor:
                     if "HTS Code" in str(col) or "HTS_Code" in str(col)
                 )
                 
+                # Check for URL column
+                url_column = self._find_url_column(columns)
+                has_url_column = url_column is not None
+                
                 # Get total row count efficiently
                 df_full = pd.read_excel(file_path, engine='openpyxl')
                 total_rows = len(df_full)
@@ -170,7 +197,8 @@ class ExcelProcessor:
                 
                 logger.info(f"File validation successful: {total_rows} rows, "
                            f"{empty_descriptions} empty descriptions, "
-                           f"{existing_hts_codes} existing HTS codes")
+                           f"{existing_hts_codes} existing HTS codes, "
+                           f"URL column: {url_column}")
                 
                 return True, "", total_rows
                 
@@ -234,6 +262,158 @@ class ExcelProcessor:
         except Exception as e:
             logger.error(f"Failed to read file in chunks: {e}")
             raise
+    
+    def read_file_chunked_with_urls(
+        self, 
+        file_path: Path, 
+        process_mode: str = "all"
+    ) -> Iterator[Tuple[pd.DataFrame, int, int, Optional[str]]]:
+        """
+        Read Excel file in chunks with URL column support for memory-efficient processing.
+        
+        Args:
+            file_path: Path to the Excel file
+            process_mode: "all" to process all rows, "empty_only" to process only rows without HTS codes
+            
+        Yields:
+            Tuple of (chunk_dataframe, chunk_start_row, total_rows, url_column_name)
+        """
+        logger.info(f"Reading file in chunks with URL support: {file_path}, mode: {process_mode}")
+        
+        try:
+            # First, get the total row count and identify URL column
+            df_full = pd.read_excel(file_path, engine='openpyxl')
+            total_rows = len(df_full)
+            url_column = self._find_url_column(df_full.columns)
+            
+            # Find the description column
+            description_col = next(
+                col for col in df_full.columns 
+                if "Product Detailed Description" in str(col)
+            )
+            
+            # Find HTS Code column if it exists
+            hts_col = None
+            for col in df_full.columns:
+                if "HTS Code" in str(col) or "HTS_Code" in str(col):
+                    hts_col = col
+                    break
+            
+            logger.info(f"URL column detected: {url_column}")
+            
+            # Process in chunks
+            for start_row in range(0, total_rows, self.chunk_size):
+                end_row = min(start_row + self.chunk_size, total_rows)
+                chunk = df_full.iloc[start_row:end_row].copy()
+                
+                # Filter chunk based on process_mode
+                filtered_chunk = self.filter_rows_for_processing(chunk, process_mode)
+                
+                if not filtered_chunk.empty:
+                    logger.debug(f"Yielding chunk: rows {start_row}-{end_row-1}, "
+                               f"{len(filtered_chunk)} rows to process, URL column: {url_column}")
+                    yield filtered_chunk, start_row, total_rows, url_column
+                else:
+                    logger.debug(f"Skipping empty chunk: rows {start_row}-{end_row-1}")
+                    
+        except Exception as e:
+            logger.error(f"Failed to read file in chunks with URLs: {e}")
+            raise
+    
+    def _find_url_column(self, columns: List[str]) -> Optional[str]:
+        """
+        Find URL column among possible column names.
+        
+        Args:
+            columns: List of column names from DataFrame
+            
+        Returns:
+            URL column name if found, None otherwise
+        """
+        for col_name in columns:
+            if col_name in self.url_column_names:
+                return col_name
+        return None
+    
+    def extract_url_from_row(self, row: pd.Series, url_column: Optional[str]) -> Optional[str]:
+        """
+        Extract URL from a DataFrame row.
+        
+        Args:
+            row: DataFrame row (Series)
+            url_column: Name of the URL column
+            
+        Returns:
+            URL string if found and valid, None otherwise
+        """
+        if not url_column or url_column not in row.index:
+            return None
+        
+        url_value = row[url_column]
+        if pd.isna(url_value):
+            return None
+        
+        url_str = str(url_value).strip()
+        return url_str if url_str else None
+    
+    def validate_file_with_url_support(self, file_path: Path) -> Tuple[bool, str, int, bool]:
+        """
+        Validate Excel file with URL column detection support.
+        
+        Args:
+            file_path: Path to the Excel file
+            
+        Returns:
+            Tuple of (is_valid, error_message, total_rows, has_url_column)
+        """
+        logger.info(f"Validating Excel file with URL support: {file_path}")
+        
+        try:
+            # Check if file exists
+            if not file_path.exists():
+                return False, f"File not found: {file_path}", 0, False
+            
+            # Check file extension
+            if file_path.suffix.lower() not in ['.xlsx', '.xls']:
+                return False, f"Invalid file format. Expected .xlsx or .xls, got {file_path.suffix}", 0, False
+            
+            # Try to read the file header to check structure
+            try:
+                # Read just the first few rows to check columns
+                df_sample = pd.read_excel(file_path, nrows=5, engine='openpyxl')
+                
+                if df_sample.empty:
+                    return False, "File is empty or contains no data", 0, False
+                
+                # Check for required columns
+                columns = df_sample.columns.tolist()
+                has_description = any(
+                    col for col in columns 
+                    if "Product Detailed Description" in str(col)
+                )
+                
+                if not has_description:
+                    return False, f"Required column 'Product Detailed Description' not found. Available columns: {columns}", len(df_sample), False
+                
+                # Check for URL column
+                url_column = self._find_url_column(columns)
+                has_url_column = url_column is not None
+                
+                # Get total row count efficiently
+                df_full = pd.read_excel(file_path, engine='openpyxl')
+                total_rows = len(df_full)
+                
+                logger.info(f"File validation successful: {total_rows} rows, "
+                           f"URL column: {url_column if has_url_column else 'Not found'}")
+                
+                return True, "", total_rows, has_url_column
+                
+            except Exception as e:
+                return False, f"Failed to read Excel file: {str(e)}", 0, False
+                
+        except Exception as e:
+            logger.error(f"File validation failed: {e}")
+            return False, f"Validation error: {str(e)}", 0, False
     
     def filter_rows_for_processing(
         self, 
