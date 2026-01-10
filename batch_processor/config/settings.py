@@ -25,6 +25,13 @@ class AlgorithmType(str, Enum):
     LLM_REASONING = "llm_reasoning"
 
 
+class URLPriority(str, Enum):
+    """URL search priority modes."""
+    FIRST = "first"      # URL search first, then semantic fallback
+    ONLY = "only"        # URL search only, no semantic fallback
+    DISABLED = "disabled" # Semantic search only, no URL processing
+
+
 @dataclass
 class RedisConfig:
     """Redis configuration settings."""
@@ -222,6 +229,49 @@ class FeatureConfig:
 
 
 @dataclass
+class URLNormalizationConfig:
+    """URL normalization configuration."""
+    enabled: bool = True
+    remove_query_params: bool = True
+    remove_fragments: bool = True
+    normalize_protocol: bool = True
+    supported_shops: List[str] = field(default_factory=lambda: [
+        'ozon', 'yandex_market', 'wildberries', 'aliexpress'
+    ])
+
+
+@dataclass
+class URLSecurityConfig:
+    """URL security configuration."""
+    enabled: bool = True
+    validate_on_input: bool = True
+    sanitize_for_storage: bool = True
+    mask_sensitive_params: bool = True
+    max_url_length: int = 2048
+    block_malicious_patterns: bool = True
+
+
+@dataclass
+class URLDatabaseConfig:
+    """URL database configuration."""
+    collection_name: str = "url_tnved_mapping"
+    batch_size: int = 100
+    enable_statistics: bool = True
+    auto_cleanup_duplicates: bool = False
+
+
+@dataclass
+class URLProcessingConfig:
+    """URL processing configuration."""
+    enabled: bool = True
+    priority: URLPriority = URLPriority.FIRST
+    timeout_seconds: float = 5.0
+    normalization: URLNormalizationConfig = field(default_factory=URLNormalizationConfig)
+    security: URLSecurityConfig = field(default_factory=URLSecurityConfig)
+    database: URLDatabaseConfig = field(default_factory=URLDatabaseConfig)
+
+
+@dataclass
 class BatchProcessorConfig:
     """Main configuration class for the batch processor."""
     redis: RedisConfig = field(default_factory=RedisConfig)
@@ -236,6 +286,7 @@ class BatchProcessorConfig:
     performance: PerformanceConfig = field(default_factory=PerformanceConfig)
     backup: BackupConfig = field(default_factory=BackupConfig)
     features: FeatureConfig = field(default_factory=FeatureConfig)
+    url_processing: URLProcessingConfig = field(default_factory=URLProcessingConfig)
     
     @classmethod
     def from_yaml(cls, config_path: str) -> "BatchProcessorConfig":
@@ -332,6 +383,32 @@ class BatchProcessorConfig:
             features_data = data["features"]
             config.features = FeatureConfig(**features_data)
         
+        # Update URL processing config
+        if "url_processing" in data:
+            url_data = data["url_processing"]
+            
+            # Handle priority enum conversion
+            if "priority" in url_data:
+                priority_str = url_data["priority"]
+                try:
+                    url_data["priority"] = URLPriority(priority_str)
+                except ValueError:
+                    # Keep original value, will be caught in validation
+                    pass
+            
+            # Handle nested URL configs
+            if "normalization" in url_data:
+                norm_data = url_data.pop("normalization")
+                url_data["normalization"] = URLNormalizationConfig(**norm_data)
+            if "security" in url_data:
+                sec_data = url_data.pop("security")
+                url_data["security"] = URLSecurityConfig(**sec_data)
+            if "database" in url_data:
+                db_data = url_data.pop("database")
+                url_data["database"] = URLDatabaseConfig(**db_data)
+            
+            config.url_processing = URLProcessingConfig(**url_data)
+        
         return config
     
     @classmethod
@@ -368,6 +445,56 @@ class BatchProcessorConfig:
         config.auth.enabled = os.getenv("AUTH_ENABLED", "true").lower() == "true"
         config.auth.session_secret = os.getenv("SESSION_SECRET", config.auth.session_secret)
         
+        # URL processing configuration from environment
+        config.url_processing.enabled = os.getenv("TNVED_URL_ENABLED", "true").lower() == "true"
+        
+        if priority := os.getenv("TNVED_URL_PRIORITY"):
+            try:
+                config.url_processing.priority = URLPriority(priority.lower())
+            except ValueError:
+                pass  # Keep default
+        
+        if timeout := os.getenv("TNVED_URL_TIMEOUT_SECONDS"):
+            try:
+                config.url_processing.timeout_seconds = float(timeout)
+            except ValueError:
+                pass
+        
+        # URL normalization settings
+        config.url_processing.normalization.enabled = os.getenv("TNVED_URL_NORMALIZATION_ENABLED", "true").lower() == "true"
+        config.url_processing.normalization.remove_query_params = os.getenv("TNVED_URL_REMOVE_QUERY_PARAMS", "true").lower() == "true"
+        config.url_processing.normalization.remove_fragments = os.getenv("TNVED_URL_REMOVE_FRAGMENTS", "true").lower() == "true"
+        config.url_processing.normalization.normalize_protocol = os.getenv("TNVED_URL_NORMALIZE_PROTOCOL", "true").lower() == "true"
+        
+        if supported_shops := os.getenv("TNVED_URL_SUPPORTED_SHOPS"):
+            config.url_processing.normalization.supported_shops = [shop.strip() for shop in supported_shops.split(",")]
+        
+        # URL security settings
+        config.url_processing.security.enabled = os.getenv("TNVED_URL_SECURITY_ENABLED", "true").lower() == "true"
+        config.url_processing.security.validate_on_input = os.getenv("TNVED_URL_VALIDATE_ON_INPUT", "true").lower() == "true"
+        config.url_processing.security.sanitize_for_storage = os.getenv("TNVED_URL_SANITIZE_FOR_STORAGE", "true").lower() == "true"
+        config.url_processing.security.mask_sensitive_params = os.getenv("TNVED_URL_MASK_SENSITIVE_PARAMS", "true").lower() == "true"
+        config.url_processing.security.block_malicious_patterns = os.getenv("TNVED_URL_BLOCK_MALICIOUS_PATTERNS", "true").lower() == "true"
+        
+        if max_length := os.getenv("TNVED_URL_MAX_LENGTH"):
+            try:
+                config.url_processing.security.max_url_length = int(max_length)
+            except ValueError:
+                pass
+        
+        # URL database settings
+        if collection_name := os.getenv("TNVED_URL_COLLECTION_NAME"):
+            config.url_processing.database.collection_name = collection_name
+        
+        if batch_size := os.getenv("TNVED_URL_BATCH_SIZE"):
+            try:
+                config.url_processing.database.batch_size = int(batch_size)
+            except ValueError:
+                pass
+        
+        config.url_processing.database.enable_statistics = os.getenv("TNVED_URL_ENABLE_STATISTICS", "true").lower() == "true"
+        config.url_processing.database.auto_cleanup_duplicates = os.getenv("TNVED_URL_AUTO_CLEANUP_DUPLICATES", "false").lower() == "true"
+        
         return config
     
     def validate(self) -> None:
@@ -395,6 +522,23 @@ class BatchProcessorConfig:
         # Validate auth settings
         if self.auth.enabled and not self.auth.users:
             errors.append("Authentication is enabled but no users configured")
+        
+        # Validate URL processing settings
+        if self.url_processing.enabled:
+            if self.url_processing.timeout_seconds <= 0:
+                errors.append("URL processing timeout must be positive")
+            
+            if self.url_processing.security.max_url_length <= 0:
+                errors.append("URL max length must be positive")
+            
+            if self.url_processing.database.batch_size <= 0:
+                errors.append("URL database batch size must be positive")
+            
+            if not self.url_processing.database.collection_name.strip():
+                errors.append("URL database collection name cannot be empty")
+            
+            if not self.url_processing.normalization.supported_shops:
+                errors.append("At least one supported shop must be specified for URL processing")
         
         if errors:
             raise ValueError("Configuration validation failed: " + "; ".join(errors))
@@ -441,3 +585,62 @@ def set_config(config: BatchProcessorConfig) -> None:
     global _config
     config.validate()
     _config = config
+
+
+def validate_url_processing_config(config: URLProcessingConfig) -> List[str]:
+    """
+    Validates URL processing configuration and returns list of errors.
+    
+    Args:
+        config: URL processing configuration to validate
+        
+    Returns:
+        List of validation error messages
+    """
+    errors = []
+    
+    # Validate timeout
+    if config.timeout_seconds <= 0:
+        errors.append(f"Invalid URL timeout_seconds: {config.timeout_seconds}. Must be positive")
+    
+    # Validate max URL length
+    if config.security.max_url_length <= 0:
+        errors.append(f"Invalid URL max_url_length: {config.security.max_url_length}. Must be positive")
+    
+    # Validate batch size
+    if config.database.batch_size <= 0:
+        errors.append(f"Invalid URL batch_size: {config.database.batch_size}. Must be positive")
+    
+    # Validate collection name
+    if not config.database.collection_name.strip():
+        errors.append("URL collection name cannot be empty")
+    
+    # Validate supported shops
+    if not config.normalization.supported_shops:
+        errors.append("At least one supported shop must be specified")
+    
+    # Validate priority enum
+    if not isinstance(config.priority, URLPriority):
+        errors.append(f"Invalid URL priority: {config.priority}. Must be URLPriority enum value")
+    
+    return errors
+
+
+def get_url_processing_config() -> URLProcessingConfig:
+    """
+    Get URL processing configuration from global config.
+    
+    Returns:
+        URLProcessingConfig instance
+    """
+    return get_config().url_processing
+
+
+def is_url_processing_enabled() -> bool:
+    """
+    Check if URL processing is enabled in configuration.
+    
+    Returns:
+        True if URL processing is enabled
+    """
+    return get_config().url_processing.enabled

@@ -46,6 +46,10 @@ class TaskStatus(BaseModel):
     started_at: Optional[datetime] = Field(default=None, description="Task start timestamp")
     completed_at: Optional[datetime] = Field(default=None, description="Task completion timestamp")
     error_message: Optional[str] = Field(default=None, description="Error message if task failed")
+    # URL processing specific fields
+    url_matches: Optional[int] = Field(default=None, description="Number of codes found by URL matching")
+    semantic_matches: Optional[int] = Field(default=None, description="Number of codes found by semantic search")
+    url_processing_enabled: Optional[bool] = Field(default=None, description="Whether URL processing was enabled")
 
 
 class UploadResponse(BaseModel):
@@ -60,6 +64,10 @@ class UploadResponse(BaseModel):
     processing_mode: ProcessingMode = Field(description="Selected processing mode")
     algorithm: AlgorithmType = Field(description="Selected algorithm")
     message: str = Field(description="Success message")
+    # URL processing specific fields
+    has_url_column: Optional[bool] = Field(default=None, description="Whether file contains URL column")
+    url_coverage: Optional[float] = Field(default=None, description="Percentage of rows with URLs")
+    processing_strategy: Optional[str] = Field(default=None, description="Processing strategy used")
 
 
 class DownloadInfo(BaseModel):
@@ -136,3 +144,10 @@ class ProcessingSummary(BaseModel):
     average_time_per_row_ms: float = Field(ge=0, description="Average processing time per row")
     algorithm_used: AlgorithmType = Field(description="Algorithm used for processing")
     processing_mode: ProcessingMode = Field(description="Processing mode used")
+    # URL processing specific fields
+    url_matches: Optional[int] = Field(default=None, description="Number of codes found by URL matching")
+    semantic_matches: Optional[int] = Field(default=None, description="Number of codes found by semantic search")
+    url_match_rate: Optional[float] = Field(default=None, description="Percentage of successful URL matches")
+    url_processing_enabled: Optional[bool] = Field(default=None, description="Whether URL processing was enabled")
+    has_url_column: Optional[bool] = Field(default=None, description="Whether file contained URL column")
+    processing_strategy: Optional[str] = Field(default=None, description="Processing strategy used")

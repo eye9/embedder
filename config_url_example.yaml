@@ -1,18 +1,16 @@
-# Example configuration for URL-based TNVED code matching
-# This extends the existing configuration with URL processing settings
+# Batch Processor Configuration with URL Processing Support
+# This example shows how to configure URL-based TNVED code matching
 
-# Existing configuration sections...
-model:
-  name: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-  device: "cuda"
+# Processing configuration
+processing:
+  chunk_size: 1000
+  default_algorithm: "similarity_top1"
+  confidence_threshold: 0.7
+  max_file_size_mb: 100
 
-database:
-  path: "./chroma_db"
-  collection_name: "tnved"
-
-# New URL processing configuration
+# URL Processing Configuration
 url_processing:
-  # Enable/disable URL processing
+  # Enable/disable URL processing feature
   enabled: true
   
   # URL search priority: "first", "only", or "disabled"
@@ -27,32 +25,65 @@ url_processing:
   # URL normalization settings
   normalization:
     enabled: true
-    remove_query_params: true
-    remove_fragments: true
-    normalize_protocol: true
+    remove_query_params: true    # Remove ?param=value from URLs
+    remove_fragments: true       # Remove #fragment from URLs
+    normalize_protocol: true     # Convert http to https
     supported_shops:
       - "ozon"
       - "yandex_market"
       - "wildberries"
       - "aliexpress"
   
-  # Security settings
+  # URL security settings
   security:
     enabled: true
-    validate_on_input: true
-    sanitize_for_storage: true
-    mask_sensitive_params: true
-    max_url_length: 2048
-    block_malicious_patterns: true
+    validate_on_input: true           # Validate URLs when processing input
+    sanitize_for_storage: true        # Sanitize URLs before database storage
+    mask_sensitive_params: true       # Mask sensitive parameters in logs
+    max_url_length: 2048              # Maximum allowed URL length
+    block_malicious_patterns: true    # Block URLs with malicious patterns
   
-  # Database settings for URL mappings
+  # URL database settings
   database:
-    collection_name: "url_tnved_mapping"
-    batch_size: 100
-    enable_statistics: true
-    auto_cleanup_duplicates: false
+    collection_name: "url_tnved_mapping"  # ChromaDB collection name
+    batch_size: 100                       # Batch size for URL operations
+    enable_statistics: true               # Enable URL processing statistics
+    auto_cleanup_duplicates: false       # Automatically clean duplicate URLs
 
-# Existing configuration sections continue...
+# Web configuration
+web:
+  host: "0.0.0.0"
+  port: 8000
+  debug: false
+
+# File management
+files:
+  temp_dir: "./temp_files"
+  max_storage_gb: 10.0
+  auto_cleanup_enabled: true
+
+# Authentication
+auth:
+  enabled: true
+  users:
+    admin: "admin123"
+  session_secret: "change-this-secret-key"
+
+# Logging configuration
 logging:
-  level: "INFO"
-  file: "tnved_embedder.log"
+  level: "info"
+  file_enabled: true
+  file_path: "./logs/batch_processor.log"
+  sensitive_data_masking: true  # Important for URL security
+
+# Security configuration
+security:
+  session_timeout_hours: 24
+  max_concurrent_uploads: 10
+  cors_origins: ["*"]
+
+# Features
+features:
+  llm_integration: false
+  advanced_analytics: true
+  batch_notifications: false

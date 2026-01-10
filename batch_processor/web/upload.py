@@ -100,16 +100,21 @@ def validate_uploaded_file(file: UploadFile) -> Tuple[bool, str, dict]:
 
 async def validate_excel_content(file_path: Path) -> ValidationResult:
     """
-    Validate Excel file content and structure.
+    Validate Excel file content and structure with URL support.
     
     Args:
         file_path: Path to the uploaded Excel file
         
     Returns:
-        ValidationResult with validation details
+        ValidationResult with validation details including URL column information
     """
     try:
-        is_valid, error_message, total_rows = excel_processor.validate_file(file_path)
+        # Use enhanced Excel processor for URL support
+        from ..services.enhanced_excel_processor import EnhancedExcelProcessor
+        enhanced_processor = EnhancedExcelProcessor()
+        
+        # Validate with URL support
+        is_valid, error_message, total_rows, has_url_column = enhanced_processor.validate_file_with_url_support(file_path)
         
         if not is_valid:
             return ValidationResult(
@@ -123,7 +128,34 @@ async def validate_excel_content(file_path: Path) -> ValidationResult:
             )
         
         # Get detailed file information
-        file_info = excel_processor.get_file_info(file_path)
+        file_info = enhanced_processor.get_file_info(file_path)
+        
+        # Add URL-specific information
+        file_info['has_url_column'] = has_url_column
+        if has_url_column:
+            # Get URL column statistics
+            url_column = None
+            for col_name in enhanced_processor.url_column_names:
+                if col_name in file_info.get('columns', []):
+                    url_column = col_name
+                    break
+            
+            file_info['url_column_name'] = url_column
+            
+            # Count rows with URLs
+            import pandas as pd
+            df = pd.read_excel(file_path, engine='openpyxl')
+            if url_column and url_column in df.columns:
+                rows_with_urls = df[url_column].notna().sum()
+                file_info['rows_with_urls'] = int(rows_with_urls)
+                file_info['url_coverage'] = float(rows_with_urls / len(df)) if len(df) > 0 else 0.0
+            else:
+                file_info['rows_with_urls'] = 0
+                file_info['url_coverage'] = 0.0
+        else:
+            file_info['url_column_name'] = None
+            file_info['rows_with_urls'] = 0
+            file_info['url_coverage'] = 0.0
         
         # Convert numpy types to Python types for Pydantic serialization
         def convert_numpy_types(obj):
@@ -166,6 +198,8 @@ async def upload_file(
     file: UploadFile = File(..., description="Excel file to process"),
     process_mode: ProcessingMode = Form(default=ProcessingMode.ALL, description="Processing mode"),
     algorithm: AlgorithmType = Form(default=AlgorithmType.SIMILARITY_TOP1, description="Algorithm to use"),
+    use_url_processing: bool = Form(default=True, description="Enable URL-based code matching"),
+    url_priority: str = Form(default="first", description="URL priority mode: first, only, disabled"),
     user: str = Depends(require_auth)
 ):
     """
@@ -240,14 +274,29 @@ async def upload_file(
                     process_mode.value,
                     algorithm.value,
                     user
-                ]
+                ],
+                kwargs={
+                    'use_url_processing': use_url_processing,
+                    'url_priority': url_priority
+                }
             )
             
             task_id = task_result.id
-            logger.info(f"Created processing task {task_id} for session {session_id}")
+            logger.info(f"Created processing task {task_id} for session {session_id} with URL processing: {use_url_processing}")
             
             # Schedule file cleanup using Celery task (preferred)
             file_manager.schedule_cleanup_task(session_id)
+            
+            # Determine processing strategy message
+            has_url_column = validation_result.file_info.get('has_url_column', False)
+            url_coverage = validation_result.file_info.get('url_coverage', 0.0)
+            
+            if use_url_processing and has_url_column:
+                strategy_msg = f"Using hybrid processing (URL + semantic search). URL coverage: {url_coverage:.1%}"
+            elif has_url_column:
+                strategy_msg = "URL column detected but URL processing disabled. Using semantic search only."
+            else:
+                strategy_msg = "No URL column detected. Using semantic search only."
             
             return UploadResponse(
                 task_id=task_id,
@@ -258,7 +307,10 @@ async def upload_file(
                 rows_to_process=rows_to_process,
                 processing_mode=process_mode,
                 algorithm=algorithm,
-                message=f"File uploaded successfully. Processing {rows_to_process} rows with {algorithm.value} algorithm."
+                message=f"File uploaded successfully. Processing {rows_to_process} rows with {algorithm.value} algorithm. {strategy_msg}",
+                has_url_column=validation_result.file_info.get('has_url_column', False),
+                url_coverage=validation_result.file_info.get('url_coverage', 0.0),
+                processing_strategy="hybrid" if (use_url_processing and has_url_column) else "semantic"
             )
             
         except Exception as celery_error:
@@ -277,7 +329,9 @@ async def upload_file(
                     file_path=str(file_path),
                     process_mode=process_mode.value,
                     algorithm=algorithm.value,
-                    user=user
+                    user=user,
+                    use_url_processing=use_url_processing,
+                    url_priority=url_priority
                 )
                 
                 logger.info(f"Synchronous processing completed for session {session_id}")
@@ -288,6 +342,17 @@ async def upload_file(
                 # Store the result for later retrieval
                 _store_sync_result(sync_task_id, result)
                 
+                # Determine processing strategy message
+                has_url_column = validation_result.file_info.get('has_url_column', False)
+                url_coverage = validation_result.file_info.get('url_coverage', 0.0)
+                
+                if use_url_processing and has_url_column:
+                    strategy_msg = f"Used hybrid processing (URL + semantic search). URL coverage: {url_coverage:.1%}"
+                elif has_url_column:
+                    strategy_msg = "URL column detected but URL processing disabled. Used semantic search only."
+                else:
+                    strategy_msg = "No URL column detected. Used semantic search only."
+                
                 return UploadResponse(
                     task_id=sync_task_id,
                     session_id=session_id,
@@ -297,7 +362,10 @@ async def upload_file(
                     rows_to_process=rows_to_process,
                     processing_mode=process_mode,
                     algorithm=algorithm,
-                    message=f"File processed successfully! {rows_to_process} rows processed with {algorithm.value} algorithm. Ready for download."
+                    message=f"File processed successfully! {rows_to_process} rows processed with {algorithm.value} algorithm. {strategy_msg} Ready for download.",
+                    has_url_column=validation_result.file_info.get('has_url_column', False),
+                    url_coverage=validation_result.file_info.get('url_coverage', 0.0),
+                    processing_strategy="hybrid" if (use_url_processing and has_url_column) else "semantic"
                 )
                 
             except Exception as sync_error:

@@ -14,6 +14,7 @@ from celery.exceptions import Retry
 
 from batch_processor.workers.celery_app import celery_app
 from batch_processor.services.excel_processor import ExcelProcessor
+from batch_processor.services.enhanced_excel_processor import EnhancedExcelProcessor
 from batch_processor.services.file_manager import FileManager
 from batch_processor.services.tnved_selector import SelectorFactory
 from batch_processor.services.progress_tracker import get_progress_tracker
@@ -22,6 +23,10 @@ from batch_processor.services.monitoring import get_metrics_collector
 from batch_processor.services.logging_service import get_structured_logger
 from batch_processor.models.result import ProcessingResult
 from batch_processor.config.settings import get_config
+from services.hybrid_selector import HybridSelector, URLPriority, HybridProcessingResult
+from services.url_matcher import URLMatcher
+from services.url_database_manager import URLDatabaseManager
+from services.chroma_manager import ChromaManager
 
 
 logger = logging.getLogger(__name__)
@@ -37,6 +42,8 @@ def process_file_sync(
     algorithm: str,
     user: str = "anonymous",
     celery_task=None,  # Add Celery task context for progress updates
+    use_url_processing: bool = True,  # Enable URL processing by default
+    url_priority: str = "first",  # URL priority mode
     **kwargs
 ) -> Dict[str, Any]:
     """
@@ -74,7 +81,7 @@ def process_file_sync(
     try:
         # Initialize services
         config = get_config()
-        excel_processor = ExcelProcessor(chunk_size=config.processing.chunk_size)
+        excel_processor = EnhancedExcelProcessor(chunk_size=config.processing.chunk_size)
         file_manager = FileManager(base_path=config.files.temp_dir)
         progress_tracker = get_progress_tracker()
         
@@ -114,8 +121,17 @@ def process_file_sync(
         # Convert file path to Path object
         file_path_obj = Path(file_path)
         
-        # Validate the file
-        is_valid, error_msg, total_rows = excel_processor.validate_file(file_path_obj)
+        # Determine processing strategy based on file characteristics
+        processing_strategy = excel_processor.determine_processing_strategy(file_path_obj)
+        logger.info(f"Processing strategy: {processing_strategy['strategy']} - {processing_strategy['reason']}")
+        
+        # Override URL processing based on parameters
+        if not use_url_processing:
+            processing_strategy['recommended_selector'] = 'semantic'
+            logger.info("URL processing disabled by parameter - using semantic only")
+        
+        # Validate the file with URL support
+        is_valid, error_msg, total_rows, has_url_column = excel_processor.validate_file_with_url_support(file_path_obj)
         if not is_valid:
             return {
                 "status": "failed",
@@ -123,7 +139,7 @@ def process_file_sync(
                 "stage": "validation"
             }
         
-        logger.info(f"File validation successful: {total_rows} total rows")
+        logger.info(f"File validation successful: {total_rows} total rows, has_url_column: {has_url_column}")
         
         # Get file info for processing statistics
         file_info = excel_processor.get_file_info(file_path_obj)
@@ -160,9 +176,18 @@ def process_file_sync(
                 }
             )
         
-        # Create selector
+        # Create selector based on processing strategy
         try:
-            selector = tnved_integration.create_selector(algorithm, **kwargs)
+            if processing_strategy['recommended_selector'] == 'hybrid' and has_url_column and use_url_processing:
+                # Create hybrid selector with URL support
+                selector = _create_hybrid_selector(tnved_integration, algorithm, url_priority, **kwargs)
+                use_hybrid_processing = True
+                logger.info(f"Using hybrid selector with URL priority: {url_priority}")
+            else:
+                # Create standard semantic selector
+                selector = tnved_integration.create_selector(algorithm, **kwargs)
+                use_hybrid_processing = False
+                logger.info(f"Using standard {algorithm} selector")
         except Exception as e:
             logger.error(f"Failed to create selector: {e}")
             return _process_file_without_tnved(
@@ -193,68 +218,115 @@ def process_file_sync(
         results = []
         processed_count = 0
         error_count = 0
+        url_match_count = 0
+        semantic_match_count = 0
         
-        # Use excel_processor to get properly filtered chunks
-        for chunk, start_row, total_rows in excel_processor.read_file_chunked(file_path_obj, process_mode):
-            logger.info(f"Processing chunk with {len(chunk)} rows (original rows {start_row} to {start_row + len(chunk) - 1})")
-            
-            for chunk_idx, row in chunk.iterrows():
-                try:
-                    description = str(row[description_col]).strip()
-                    if not description or description.lower() in ['nan', 'none', '']:
-                        continue
-                    
-                    # Use the original dataframe index (chunk_idx) for result mapping
-                    logger.info(f"Processing row {chunk_idx}: '{description[:50]}...'")
-                    
-                    # Process with selector
-                    result = selector.select_code(description, chunk_idx)
-                    results.append(result)
-                    processed_count += 1
-                    
-                    if not result.is_successful():
-                        error_count += 1
-                    
-                    # Update progress
-                    progress = min(processed_count / rows_to_process, 1.0) if rows_to_process > 0 else 1.0
-                    
-                    # Calculate estimated time remaining
-                    elapsed_time = time.time() - start_time
-                    if elapsed_time > 0 and progress > 0:
-                        estimated_total_time = elapsed_time / progress
-                        estimated_remaining = max(0, int(estimated_total_time - elapsed_time))
-                    else:
-                        estimated_remaining = None
-                    
-                    progress_tracker.update_progress(
-                        task_id=sync_task_id,
-                        status='processing',
-                        progress=progress,
-                        processed_rows=int(processed_count),
-                        total_rows=int(rows_to_process),
-                        error_count=int(error_count),
-                        message=f"Processing row {processed_count}/{rows_to_process}...",
-                        estimated_time_remaining=estimated_remaining
-                    )
-                    
-                    # Also update Celery task state if available
-                    if celery_task:
-                        celery_task.update_state(
-                            state='PROGRESS',
-                            meta={
-                                'progress': progress,
-                                'processed_rows': int(processed_count),
-                                'total_rows': int(rows_to_process),
-                                'error_count': int(error_count),
-                                'stage': 'processing',
-                                'message': f'Processing row {processed_count}/{rows_to_process}...',
-                                'estimated_time_remaining': estimated_remaining
-                            }
-                        )
-                    
-                except Exception as e:
-                    logger.error(f"Failed to process row {chunk_idx}: {e}")
+        # Use enhanced excel processor for hybrid processing if applicable
+        if use_hybrid_processing:
+            # Process with hybrid selector
+            for hybrid_result in excel_processor.process_file_with_hybrid_selector(
+                file_path_obj, selector, process_mode
+            ):
+                # Convert to standard result for compatibility
+                result = hybrid_result.to_processing_result()
+                results.append(result)
+                processed_count += 1
+                
+                # Track match sources for statistics
+                if hybrid_result.match_source == "url":
+                    url_match_count += 1
+                elif hybrid_result.match_source == "semantic":
+                    semantic_match_count += 1
+                
+                if not result.is_successful():
                     error_count += 1
+                
+                # Update progress with URL processing metrics
+                progress = min(processed_count / rows_to_process, 1.0) if rows_to_process > 0 else 1.0
+                
+                # Calculate estimated time remaining
+                elapsed_time = time.time() - start_time
+                if elapsed_time > 0 and progress > 0:
+                    estimated_total_time = elapsed_time / progress
+                    estimated_remaining = max(0, int(estimated_total_time - elapsed_time))
+                else:
+                    estimated_remaining = None
+                
+                progress_tracker.update_progress(
+                    task_id=sync_task_id,
+                    status='processing',
+                    progress=progress,
+                    processed_rows=int(processed_count),
+                    total_rows=int(rows_to_process),
+                    error_count=int(error_count),
+                    message=f"Processing row {processed_count}/{rows_to_process} (URL: {url_match_count}, Semantic: {semantic_match_count})...",
+                    estimated_time_remaining=estimated_remaining
+                )
+                
+                # Also update Celery task state if available
+                if celery_task:
+                    celery_task.update_state(
+                        state='PROGRESS',
+                        meta={
+                            'progress': progress,
+                            'processed_rows': int(processed_count),
+                            'total_rows': int(rows_to_process),
+                            'error_count': int(error_count),
+                            'stage': 'processing',
+                            'message': f'Processing row {processed_count}/{rows_to_process} (URL: {url_match_count}, Semantic: {semantic_match_count})...',
+                            'estimated_time_remaining': estimated_remaining,
+                            'url_matches': url_match_count,
+                            'semantic_matches': semantic_match_count
+                        }
+                    )
+        else:
+            # Use standard processing with backward compatibility
+            for result in excel_processor.process_file_with_backward_compatibility(
+                file_path_obj, selector, process_mode
+            ):
+                results.append(result)
+                processed_count += 1
+                semantic_match_count += 1  # All matches are semantic in this mode
+                
+                if not result.is_successful():
+                    error_count += 1
+                
+                # Update progress
+                progress = min(processed_count / rows_to_process, 1.0) if rows_to_process > 0 else 1.0
+                
+                # Calculate estimated time remaining
+                elapsed_time = time.time() - start_time
+                if elapsed_time > 0 and progress > 0:
+                    estimated_total_time = elapsed_time / progress
+                    estimated_remaining = max(0, int(estimated_total_time - elapsed_time))
+                else:
+                    estimated_remaining = None
+                
+                progress_tracker.update_progress(
+                    task_id=sync_task_id,
+                    status='processing',
+                    progress=progress,
+                    processed_rows=int(processed_count),
+                    total_rows=int(rows_to_process),
+                    error_count=int(error_count),
+                    message=f"Processing row {processed_count}/{rows_to_process}...",
+                    estimated_time_remaining=estimated_remaining
+                )
+                
+                # Also update Celery task state if available
+                if celery_task:
+                    celery_task.update_state(
+                        state='PROGRESS',
+                        meta={
+                            'progress': progress,
+                            'processed_rows': int(processed_count),
+                            'total_rows': int(rows_to_process),
+                            'error_count': int(error_count),
+                            'stage': 'processing',
+                            'message': f'Processing row {processed_count}/{rows_to_process}...',
+                            'estimated_time_remaining': estimated_remaining
+                        }
+                    )
         
         # Add results to original dataframe
         df_original['TNVED_Code'] = ''
@@ -320,7 +392,13 @@ def process_file_sync(
             "processing_time_seconds": processing_time,
             "algorithm_used": algorithm,
             "processing_mode": process_mode,
-            "message": f"File processed successfully with {successful_assignments} TNVED codes assigned"
+            "url_processing_enabled": use_hybrid_processing,
+            "url_matches": url_match_count,
+            "semantic_matches": semantic_match_count,
+            "url_match_rate": url_match_count / processed_count if processed_count > 0 else 0.0,
+            "has_url_column": has_url_column,
+            "processing_strategy": processing_strategy['strategy'],
+            "message": f"File processed successfully with {successful_assignments} TNVED codes assigned ({url_match_count} by URL, {semantic_match_count} by semantic search)"
         }
         
     except Exception as e:
@@ -416,6 +494,60 @@ def _process_file_without_tnved(
         }
 
 
+def _create_hybrid_selector(
+    tnved_integration,
+    algorithm: str,
+    url_priority: str,
+    **kwargs
+) -> HybridSelector:
+    """
+    Create a hybrid selector with URL support.
+    
+    Args:
+        tnved_integration: TNVEDSystemIntegration instance
+        algorithm: Base semantic algorithm to use
+        url_priority: URL priority mode ("first", "only", "disabled")
+        **kwargs: Additional configuration parameters
+        
+    Returns:
+        HybridSelector instance
+    """
+    try:
+        # Create semantic selector
+        semantic_selector = tnved_integration.create_selector(algorithm, **kwargs)
+        
+        # Initialize URL components
+        chroma_manager = ChromaManager()
+        url_db_manager = URLDatabaseManager(
+            chroma_client=chroma_manager.get_client(),
+            collection_name="url_tnved_mapping"
+        )
+        url_matcher = URLMatcher(url_db_manager)
+        
+        # Parse URL priority
+        try:
+            priority_enum = URLPriority(url_priority.lower())
+        except ValueError:
+            logger.warning(f"Invalid URL priority '{url_priority}', defaulting to 'first'")
+            priority_enum = URLPriority.FIRST
+        
+        # Create hybrid selector
+        hybrid_selector = HybridSelector(
+            url_matcher=url_matcher,
+            semantic_selector=semantic_selector,
+            url_priority=priority_enum,
+            url_timeout_seconds=kwargs.get('url_timeout_seconds', 5.0),
+            verbose_reasons=kwargs.get('verbose_reasons', True)
+        )
+        
+        logger.info(f"Created hybrid selector with {algorithm} semantic backend and {url_priority} URL priority")
+        return hybrid_selector
+        
+    except Exception as e:
+        logger.error(f"Failed to create hybrid selector: {e}")
+        raise
+
+
 class ProcessingTaskError(Exception):
     """Custom exception for processing task errors."""
     pass
@@ -459,7 +591,7 @@ class ProcessingTask(Task):
         """Initialize required services lazily."""
         if self.excel_processor is None:
             self._config = get_config()
-            self.excel_processor = ExcelProcessor(
+            self.excel_processor = EnhancedExcelProcessor(
                 chunk_size=self._config.processing.chunk_size
             )
             self.file_manager = FileManager(
@@ -486,6 +618,8 @@ class ProcessingTask(Task):
         process_mode: str,
         algorithm: str,
         user: str = "anonymous",
+        use_url_processing: bool = True,  # Enable URL processing by default
+        url_priority: str = "first",  # URL priority mode
         **kwargs
     ) -> Dict[str, Any]:
         """
@@ -539,17 +673,25 @@ class ProcessingTask(Task):
                 message='Validating Excel file...'
             )
             
-            # Validate the file
-            validation_result = self.excel_processor.validate_file(file_path_obj)
-            if not validation_result.is_valid:
+            # Determine processing strategy based on file characteristics
+            processing_strategy = self.excel_processor.determine_processing_strategy(file_path_obj)
+            logger.info(f"Processing strategy: {processing_strategy['strategy']} - {processing_strategy['reason']}")
+            
+            # Override URL processing based on parameters
+            if not use_url_processing:
+                processing_strategy['recommended_selector'] = 'semantic'
+                logger.info("URL processing disabled by parameter - using semantic only")
+            
+            # Validate the file with URL support
+            is_valid, error_msg, total_rows, has_url_column = self.excel_processor.validate_file_with_url_support(file_path_obj)
+            if not is_valid:
                 return {
                     "status": "failed",
-                    "error": validation_result.error_message,
+                    "error": error_msg,
                     "stage": "validation"
                 }
             
-            total_rows = validation_result.total_rows
-            logger.info(f"File validation successful: {total_rows} total rows")
+            logger.info(f"File validation successful: {total_rows} total rows, has_url_column: {has_url_column}")
             
             # Get file size for metrics
             file_size = file_path_obj.stat().st_size
@@ -585,16 +727,35 @@ class ProcessingTask(Task):
                 validation_stats=stats
             )
             
-            # Create TNVED selector
-            selector = self._create_selector(algorithm, **kwargs)
+            # Create selector based on processing strategy
+            if processing_strategy['recommended_selector'] == 'hybrid' and has_url_column and use_url_processing:
+                # Create hybrid selector with URL support
+                selector = _create_hybrid_selector(self.tnved_integration, algorithm, url_priority, **kwargs)
+                use_hybrid_processing = True
+                logger.info(f"Using hybrid selector with URL priority: {url_priority}")
+            else:
+                # Create standard semantic selector
+                selector = self._create_selector(algorithm, **kwargs)
+                use_hybrid_processing = False
+                logger.info(f"Using standard {algorithm} selector")
             
-            # Process the file in chunks
-            results = self._process_file_chunked(
-                file_path_obj,
-                process_mode,
-                selector,
-                rows_to_process
-            )
+            # Process the file with appropriate method
+            if use_hybrid_processing:
+                # Use hybrid processing with URL support
+                results = self._process_file_with_hybrid_selector(
+                    file_path_obj,
+                    process_mode,
+                    selector,
+                    rows_to_process
+                )
+            else:
+                # Use standard chunked processing
+                results = self._process_file_chunked(
+                    file_path_obj,
+                    process_mode,
+                    selector,
+                    rows_to_process
+                )
             
             # Generate output file
             output_path = self._generate_output_file(
@@ -877,6 +1038,92 @@ class ProcessingTask(Task):
         logger.debug(f"Chunk {chunk_number} processing completed: {len(chunk_results)} results")
         return chunk_results
     
+    def _process_file_with_hybrid_selector(
+        self,
+        file_path: Path,
+        process_mode: str,
+        hybrid_selector: HybridSelector,
+        total_rows_to_process: int
+    ) -> List[ProcessingResult]:
+        """
+        Process Excel file using hybrid selector with URL support.
+        
+        Args:
+            file_path: Path to Excel file
+            process_mode: Processing mode
+            hybrid_selector: HybridSelector instance
+            total_rows_to_process: Total number of rows that will be processed
+            
+        Returns:
+            List of ProcessingResult objects (converted from HybridProcessingResult)
+        """
+        results = []
+        processed_count = 0
+        error_count = 0
+        url_match_count = 0
+        semantic_match_count = 0
+        
+        logger.info(f"Starting hybrid processing: {total_rows_to_process} rows to process")
+        
+        try:
+            # Process with hybrid selector
+            for hybrid_result in self.excel_processor.process_file_with_hybrid_selector(
+                file_path, hybrid_selector, process_mode
+            ):
+                # Convert to standard result for compatibility
+                result = hybrid_result.to_processing_result()
+                results.append(result)
+                processed_count += 1
+                
+                # Track match sources for statistics
+                if hybrid_result.match_source == "url":
+                    url_match_count += 1
+                elif hybrid_result.match_source == "semantic":
+                    semantic_match_count += 1
+                
+                if not result.is_successful():
+                    error_count += 1
+                
+                # Calculate progress
+                progress = min(processed_count / total_rows_to_process, 1.0) if total_rows_to_process > 0 else 1.0
+                
+                # Estimate time remaining
+                if processed_count > 0:
+                    elapsed_time = time.time() - (self.request.started_at if hasattr(self.request, 'started_at') else time.time())
+                    if elapsed_time > 0:
+                        estimated_total_time = elapsed_time / progress
+                        estimated_remaining = max(0, estimated_total_time - elapsed_time)
+                    else:
+                        estimated_remaining = None
+                else:
+                    estimated_remaining = None
+                
+                # Update progress with URL processing metrics
+                self.progress_tracker.update_progress(
+                    task_id=self.request.id,
+                    status='processing',
+                    progress=progress,
+                    processed_rows=processed_count,
+                    total_rows=total_rows_to_process,
+                    error_count=error_count,
+                    stage='processing',
+                    message=f'Processed {processed_count}/{total_rows_to_process} rows (URL: {url_match_count}, Semantic: {semantic_match_count})...',
+                    estimated_time_remaining=estimated_remaining,
+                    url_matches=url_match_count,
+                    semantic_matches=semantic_match_count
+                )
+                
+        except Exception as e:
+            logger.error(f"Hybrid processing failed: {e}")
+            raise ProcessingTaskError(f"Hybrid file processing failed: {e}")
+        
+        logger.info(
+            f"Hybrid processing completed: {processed_count} rows processed, "
+            f"{error_count} errors, {url_match_count} URL matches, {semantic_match_count} semantic matches"
+        )
+        
+        return results
+    
     def _generate_output_file(
         self,
         session_id: str,
@@ -941,6 +1188,8 @@ def process_excel_file(
     process_mode: str = "all",
     algorithm: str = "similarity_top1",
     user: str = "anonymous",
+    use_url_processing: bool = True,  # Enable URL processing by default
+    url_priority: str = "first",  # URL priority mode
     **kwargs
 ) -> Dict[str, Any]:
     """
@@ -965,6 +1214,8 @@ def process_excel_file(
         algorithm=algorithm,
         user=user,
         celery_task=self,  # Pass Celery task context for progress updates
+        use_url_processing=use_url_processing,
+        url_priority=url_priority,
         **kwargs
     )
 

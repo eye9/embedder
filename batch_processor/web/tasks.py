@@ -186,7 +186,10 @@ async def get_task_status(
                 total_rows=meta["total_rows"],
                 error_count=meta["error_count"],
                 estimated_time_remaining=meta["estimated_time_remaining"],
-                started_at=info.get("started_at")
+                started_at=info.get("started_at"),
+                url_matches=info.get("url_matches"),
+                semantic_matches=info.get("semantic_matches"),
+                url_processing_enabled=info.get("url_processing_enabled")
             )
         
         elif state == "SUCCESS":
@@ -200,7 +203,10 @@ async def get_task_status(
                 total_rows=result.get("total_rows", meta["total_rows"]),
                 error_count=result.get("error_count", meta["error_count"]),
                 started_at=result.get("started_at"),
-                completed_at=result.get("completed_at")
+                completed_at=result.get("completed_at"),
+                url_matches=result.get("url_matches"),
+                semantic_matches=result.get("semantic_matches"),
+                url_processing_enabled=result.get("url_processing_enabled")
             )
         
         elif state == "FAILURE":
@@ -261,7 +267,13 @@ async def get_processing_summary(
                 processing_time_seconds=sync_result.get("processing_time_seconds", 0.0),
                 average_time_per_row_ms=sync_result.get("average_time_per_row_ms", 0.0),
                 algorithm_used=sync_result.get("algorithm_used", "similarity_top1"),
-                processing_mode=sync_result.get("processing_mode", "all")
+                processing_mode=sync_result.get("processing_mode", "all"),
+                url_matches=sync_result.get("url_matches"),
+                semantic_matches=sync_result.get("semantic_matches"),
+                url_match_rate=sync_result.get("url_match_rate"),
+                url_processing_enabled=sync_result.get("url_processing_enabled"),
+                has_url_column=sync_result.get("has_url_column"),
+                processing_strategy=sync_result.get("processing_strategy")
             )
         
         # Fallback to Celery task result
@@ -285,7 +297,13 @@ async def get_processing_summary(
             processing_time_seconds=result.get("processing_time_seconds", 0.0),
             average_time_per_row_ms=result.get("average_time_per_row_ms", 0.0),
             algorithm_used=result.get("algorithm_used", "similarity_top1"),
-            processing_mode=result.get("processing_mode", "all")
+            processing_mode=result.get("processing_mode", "all"),
+            url_matches=result.get("url_matches"),
+            semantic_matches=result.get("semantic_matches"),
+            url_match_rate=result.get("url_match_rate"),
+            url_processing_enabled=result.get("url_processing_enabled"),
+            has_url_column=result.get("has_url_column"),
+            processing_strategy=result.get("processing_strategy")
         )
         
     except HTTPException:
