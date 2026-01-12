@@ -26,7 +26,7 @@ from batch_processor.config.settings import get_config
 from services.hybrid_selector import HybridSelector, URLPriority, HybridProcessingResult
 from services.url_matcher import URLMatcher
 from services.url_database_manager import URLDatabaseManager
-from services.chroma_manager import ChromaManager
+from services.chroma_manager import ChromaDBManager
 
 
 logger = logging.getLogger(__name__)
@@ -517,9 +517,9 @@ def _create_hybrid_selector(
         semantic_selector = tnved_integration.create_selector(algorithm, **kwargs)
         
         # Initialize URL components
-        chroma_manager = ChromaManager()
+        chroma_manager = ChromaDBManager(db_path="./chroma_db")
         url_db_manager = URLDatabaseManager(
-            chroma_client=chroma_manager.get_client(),
+            chroma_client=chroma_manager.client,
             collection_name="url_tnved_mapping"
         )
         url_matcher = URLMatcher(url_db_manager)

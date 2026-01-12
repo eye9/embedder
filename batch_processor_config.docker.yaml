@@ -1,16 +1,16 @@
-# Docker-specific configuration for Batch Excel Processor
+# Batch Excel Processor Configuration
 
 # Redis configuration for task queue and caching
 redis:
-  host: "${REDIS_HOST:-redis}"
-  port: ${REDIS_PORT:-6379}
-  db: ${REDIS_DB:-0}
-  password: "${REDIS_PASSWORD:-}"
+  host: "redis"
+  port: 6379
+  db: 0
+  password: null
 
 # Celery configuration for background processing
 celery:
-  broker_url: "${CELERY_BROKER_URL:-redis://redis:6379/0}"
-  result_backend: "${CELERY_RESULT_BACKEND:-redis://redis:6379/0}"
+  broker_url: "redis://redis:6379/0"
+  result_backend: "redis://redis:6379/0"
   task_serializer: "json"
   accept_content: ["json"]
   result_serializer: "json"
@@ -22,14 +22,53 @@ celery:
 
 # Processing configuration
 processing:
-  chunk_size: ${CHUNK_SIZE:-1000}
-  default_algorithm: "${DEFAULT_ALGORITHM:-similarity_top1}"
-  confidence_threshold: ${CONFIDENCE_THRESHOLD:-0.7}
-  llm_top_k: ${LLM_TOP_K:-5}
-  max_file_size_mb: ${MAX_FILE_SIZE_MB:-100}
+  chunk_size: 1000
+  default_algorithm: "similarity_top1"
+  confidence_threshold: 0.7
+  llm_top_k: 5
+  max_file_size_mb: 100
   supported_extensions: [".xlsx", ".xls"]
   required_columns: ["Product Detailed Description"]
   output_columns: ["TNVED_Code", "Selection_Reason"]
+
+# URL Processing Configuration
+url_processing:
+  # Enable/disable URL processing feature
+  enabled: true
+  
+  # URL search priority: "first", "only", or "disabled"
+  priority: "first"
+  
+  # Timeout for URL database queries (seconds)
+  timeout_seconds: 5.0
+  
+  # URL normalization settings
+  normalization:
+    enabled: true
+    remove_query_params: true
+    remove_fragments: true
+    normalize_protocol: true
+    supported_shops:
+      - "ozon"
+      - "yandex_market"
+      - "wildberries"
+      - "aliexpress"
+  
+  # URL security settings
+  security:
+    enabled: true
+    validate_on_input: true
+    sanitize_for_storage: true
+    mask_sensitive_params: true
+    max_url_length: 2048
+    block_malicious_patterns: true
+  
+  # URL database settings
+  database:
+    collection_name: "url_tnved_mapping"
+    batch_size: 100
+    enable_statistics: true
+    auto_cleanup_duplicates: false
 
 # Security settings
 security:
@@ -40,41 +79,24 @@ security:
 
 # File management
 files:
-  temp_dir: "${TEMP_DIR:-/app/temp_files}"
-  cleanup_interval_hours: ${CLEANUP_INTERVAL_HOURS:-1}
+  temp_dir: "/app/temp_files"
+  cleanup_interval_hours: 1
   max_storage_gb: 10.0
-  auto_cleanup_enabled: ${AUTO_CLEANUP_ENABLED:-true}
+  auto_cleanup_enabled: true
 
 # Web application settings
 web:
-  host: "${WEB_HOST:-0.0.0.0}"
-  port: ${WEB_PORT:-8000}
+  host: "0.0.0.0"
+  port: 8000
   debug: false
   reload: false
-  workers: ${WEB_WORKERS:-1}
-  log_level: "${LOG_LEVEL:-info}"
+  workers: 1
+  log_level: "info"
 
 # Authentication settings
 auth:
-  enabled: ${AUTH_ENABLED:-true}
+  enabled: true
   users:
     admin: "admin123"
     user: "password"
-  session_secret: "${SESSION_SECRET_KEY:-change-this-secret-key-in-production-docker}"
-
-# Logging configuration
-logging:
-  level: "${LOG_LEVEL:-info}"
-  format: "[%(asctime)s] %(levelname)s in %(module)s: %(message)s"
-  file_enabled: true
-  file_path: "${LOG_DIR:-/app/logs}/batch_processor.log"
-  max_file_size_mb: 100
-  backup_count: 5
-
-# Health check configuration
-health:
-  enabled: ${HEALTH_CHECK_ENABLED:-true}
-  check_redis: true
-  check_celery: true
-  check_disk_space: true
-  check_memory: true
+  session_secret: "docker-default-secret-change-in-production"
