@@ -1,0 +1,47 @@
+# Lightweight Windows Dockerfile using Nano Server
+FROM mcr.microsoft.com/windows/nanoserver:ltsc2019 as base
+
+# Copy Python from official image (multi-stage build)
+FROM python:3.11-windowsservercore-ltsc2019 as python-source
+
+# Final stage with Nano Server
+FROM mcr.microsoft.com/windows/nanoserver:ltsc2019
+
+# Copy Python from the python-source stage
+COPY --from=python-source C:\Python C:\Python
+COPY --from=python-source C:\Windows\System32\vcruntime140.dll C:\Windows\System32\
+COPY --from=python-source C:\Windows\System32\msvcp140.dll C:\Windows\System32\
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=C:\app \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    BATCH_PROCESSOR_ENV=production \
+    PATH="C:\Python;C:\Python\Scripts;${PATH}"
+
+# Create app directory
+WORKDIR C:\app
+
+# Copy requirements and install
+COPY requirements.txt .
+RUN python -m pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY . .
+
+# Copy production configuration
+COPY batch_processor_config.yaml C:\app\batch_processor_config.yaml
+
+# Create necessary directories
+RUN mkdir C:\app\temp_files && \
+    mkdir C:\app\chroma_db && \
+    mkdir C:\app\logs
+
+# Expose port
+EXPOSE 8000
+
+# Default command
+CMD ["python", "start_batch_web.py"]

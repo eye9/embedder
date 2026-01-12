@@ -1,0 +1,44 @@
+# Windows-compatible Dockerfile for Batch Excel Processor
+# Use official Python Windows image instead of installing Python manually
+
+FROM python:3.11-windowsservercore-ltsc2019
+
+# Set PowerShell as default shell
+SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=C:\app \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    BATCH_PROCESSOR_ENV=production
+
+# Create app directory
+WORKDIR C:\app
+
+# Copy requirements and install
+COPY requirements.txt .
+RUN python -m pip install --upgrade pip; \
+    pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY . .
+
+# Copy production configuration
+COPY batch_processor_config.yaml C:\app\batch_processor_config.yaml
+
+# Create necessary directories
+RUN New-Item -ItemType Directory -Path C:\app\temp_files -Force; \
+    New-Item -ItemType Directory -Path C:\app\chroma_db -Force; \
+    New-Item -ItemType Directory -Path C:\app\logs -Force
+
+# Expose port
+EXPOSE 8000
+
+# Health check (using PowerShell instead of curl)
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD powershell -Command "try { Invoke-WebRequest -Uri 'http://localhost:8000/health' -UseBasicParsing -TimeoutSec 10 | Out-Null; exit 0 } catch { exit 1 }"
+
+# Default command
+CMD ["python", "start_batch_web.py"]

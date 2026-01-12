@@ -1,0 +1,208 @@
+version: '3.8'
+
+services:
+  # Redis service for task queue and caching (Linux container)
+  redis:
+    image: redis:7-alpine
+    container_name: batch_processor_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - batch_processor_network
+
+  # Web application service (Windows container)
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.windows
+    container_name: batch_processor_web
+    ports:
+      - "8000:8000"
+    environment:
+      - BATCH_PROCESSOR_CONFIG=C:\app\batch_processor_config.yaml
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      # URL Processing Environment Variables
+      - URL_PROCESSING_ENABLED=${URL_PROCESSING_ENABLED:-true}
+      - URL_PRIORITY=${URL_PRIORITY:-first}
+      - URL_TIMEOUT_SECONDS=${URL_TIMEOUT_SECONDS:-5.0}
+      - URL_DATABASE_COLLECTION=${URL_DATABASE_COLLECTION:-url_tnved_mapping}
+      - URL_BATCH_SIZE=${URL_BATCH_SIZE:-100}
+      - URL_NORMALIZATION_ENABLED=${URL_NORMALIZATION_ENABLED:-true}
+      - URL_REMOVE_QUERY_PARAMS=${URL_REMOVE_QUERY_PARAMS:-true}
+      - URL_REMOVE_FRAGMENTS=${URL_REMOVE_FRAGMENTS:-true}
+      - URL_NORMALIZE_PROTOCOL=${URL_NORMALIZE_PROTOCOL:-true}
+      - URL_SUPPORTED_SHOPS=${URL_SUPPORTED_SHOPS:-ozon,yandex_market,wildberries,aliexpress}
+      - URL_MAX_LENGTH=${URL_MAX_LENGTH:-2048}
+      - URL_SECURITY_ENABLED=${URL_SECURITY_ENABLED:-true}
+      - URL_VALIDATE_ON_INPUT=${URL_VALIDATE_ON_INPUT:-true}
+      - URL_SANITIZE_FOR_STORAGE=${URL_SANITIZE_FOR_STORAGE:-true}
+      - URL_MASK_SENSITIVE_PARAMS=${URL_MASK_SENSITIVE_PARAMS:-true}
+      - URL_BLOCK_MALICIOUS_PATTERNS=${URL_BLOCK_MALICIOUS_PATTERNS:-true}
+      - URL_ENABLE_STATISTICS=${URL_ENABLE_STATISTICS:-true}
+      - URL_AUTO_CLEANUP_DUPLICATES=${URL_AUTO_CLEANUP_DUPLICATES:-true}
+    volumes:
+      - type: bind
+        source: .\temp_files
+        target: C:\app\temp_files
+      - type: bind
+        source: .\chroma_db
+        target: C:\app\chroma_db
+      - type: bind
+        source: .\logs
+        target: C:\app\logs
+      - type: bind
+        source: .\batch_processor_config.yaml
+        target: C:\app\batch_processor_config.yaml
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "powershell", "-Command", "try { Invoke-WebRequest -Uri 'http://localhost:8000/health' -UseBasicParsing -TimeoutSec 10 | Out-Null; exit 0 } catch { exit 1 }"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - batch_processor_network
+
+  # Celery worker for processing tasks (Windows container)
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.windows
+    container_name: batch_processor_worker
+    command: ["python", "-m", "celery", "-A", "batch_processor.workers.celery_app", "worker", "--loglevel=info", "--queues=processing,default"]
+    environment:
+      - BATCH_PROCESSOR_CONFIG=C:\app\batch_processor_config.yaml
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      # URL Processing Environment Variables
+      - URL_PROCESSING_ENABLED=${URL_PROCESSING_ENABLED:-true}
+      - URL_PRIORITY=${URL_PRIORITY:-first}
+      - URL_TIMEOUT_SECONDS=${URL_TIMEOUT_SECONDS:-5.0}
+      - URL_DATABASE_COLLECTION=${URL_DATABASE_COLLECTION:-url_tnved_mapping}
+      - URL_BATCH_SIZE=${URL_BATCH_SIZE:-100}
+      - URL_NORMALIZATION_ENABLED=${URL_NORMALIZATION_ENABLED:-true}
+      - URL_REMOVE_QUERY_PARAMS=${URL_REMOVE_QUERY_PARAMS:-true}
+      - URL_REMOVE_FRAGMENTS=${URL_REMOVE_FRAGMENTS:-true}
+      - URL_NORMALIZE_PROTOCOL=${URL_NORMALIZE_PROTOCOL:-true}
+      - URL_SUPPORTED_SHOPS=${URL_SUPPORTED_SHOPS:-ozon,yandex_market,wildberries,aliexpress}
+      - URL_MAX_LENGTH=${URL_MAX_LENGTH:-2048}
+      - URL_SECURITY_ENABLED=${URL_SECURITY_ENABLED:-true}
+      - URL_VALIDATE_ON_INPUT=${URL_VALIDATE_ON_INPUT:-true}
+      - URL_SANITIZE_FOR_STORAGE=${URL_SANITIZE_FOR_STORAGE:-true}
+      - URL_MASK_SENSITIVE_PARAMS=${URL_MASK_SENSITIVE_PARAMS:-true}
+      - URL_BLOCK_MALICIOUS_PATTERNS=${URL_BLOCK_MALICIOUS_PATTERNS:-true}
+      - URL_ENABLE_STATISTICS=${URL_ENABLE_STATISTICS:-true}
+      - URL_AUTO_CLEANUP_DUPLICATES=${URL_AUTO_CLEANUP_DUPLICATES:-true}
+    volumes:
+      - type: bind
+        source: .\temp_files
+        target: C:\app\temp_files
+      - type: bind
+        source: .\chroma_db
+        target: C:\app\chroma_db
+      - type: bind
+        source: .\logs
+        target: C:\app\logs
+      - type: bind
+        source: .\batch_processor_config.yaml
+        target: C:\app\batch_processor_config.yaml
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "celery", "-A", "batch_processor.workers.celery_app", "inspect", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - batch_processor_network
+
+  # Celery worker for cleanup tasks (Windows container)
+  cleanup_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.windows
+    container_name: batch_processor_cleanup_worker
+    command: ["python", "-m", "celery", "-A", "batch_processor.workers.celery_app", "worker", "--loglevel=info", "--queues=cleanup"]
+    environment:
+      - BATCH_PROCESSOR_CONFIG=C:\app\batch_processor_config.yaml
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    volumes:
+      - type: bind
+        source: .\temp_files
+        target: C:\app\temp_files
+      - type: bind
+        source: .\logs
+        target: C:\app\logs
+      - type: bind
+        source: .\batch_processor_config.yaml
+        target: C:\app\batch_processor_config.yaml
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "celery", "-A", "batch_processor.workers.celery_app", "inspect", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - batch_processor_network
+
+  # Celery beat scheduler for periodic tasks (Windows container)
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile.windows
+    container_name: batch_processor_scheduler
+    command: ["python", "-m", "celery", "-A", "batch_processor.workers.celery_app", "beat", "--loglevel=info"]
+    environment:
+      - BATCH_PROCESSOR_CONFIG=C:\app\batch_processor_config.yaml
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    volumes:
+      - type: bind
+        source: .\logs
+        target: C:\app\logs
+      - type: bind
+        source: .\batch_processor_config.yaml
+        target: C:\app\batch_processor_config.yaml
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - batch_processor_network
+
+volumes:
+  redis_data:
+    driver: local
+
+networks:
+  batch_processor_network:
+    driver: bridge
