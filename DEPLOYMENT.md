@@ -43,7 +43,7 @@ export ADMIN_PASSWORD="your-secure-admin-password"
 export SESSION_SECRET_KEY="your-long-random-secret-key"
 
 # Domain configuration
-export DOMAIN="your-domain.com"
+export DOMAIN="spegat.com"
 export HTTPS_ONLY="true"
 export SECURE_COOKIES="true"
 

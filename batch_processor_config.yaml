@@ -58,6 +58,6 @@ web:
 auth:
   enabled: true
   users:
-    admin: "admin123"
-    user: "password"
-  session_secret: "change-this-secret-key-in-production"
+    admin: "9e0B127!683d7"
+    operator: "b0e6!1394Fbdb9"
+  session_secret: "ada5a6e75524f8b033c8da4dda1fdc2ad01256eb317cc555"

@@ -180,8 +180,8 @@ OPERATOR_PASSWORD=secure_operator_password_min_12_chars
 SESSION_SECRET_KEY=very-long-random-secret-key-for-session-security-change-this
 
 # Security
-DOMAIN=yourdomain.com
-ALLOWED_HOST=yourdomain.com
+DOMAIN=spegat.com
+ALLOWED_HOST=spegat.com
 HTTPS_ONLY=true
 SECURE_COOKIES=true
 

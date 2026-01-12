@@ -100,3 +100,4 @@ docker-compose.override.yml
 config.yaml
 !config.example.yaml
 .env.development
+.env.production
