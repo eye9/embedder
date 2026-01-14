@@ -1,7 +1,5 @@
-version: '3.8'
-
 services:
-  # Redis service for task queue and caching (Windows container)
+  # Redis service (Windows container)
   redis:
     build:
       context: .
@@ -10,17 +8,14 @@ services:
     ports:
       - "6379:6379"
     volumes:
-      - type: bind
-        source: .\\redis_data
-        target: C:\\data
+      - redis_data:C:/data
     healthcheck:
       test: ["CMD", "powershell", "-Command", "Test-NetConnection -ComputerName localhost -Port 6379 -InformationLevel Quiet"]
       interval: 30s
       timeout: 10s
       retries: 5
+      start_period: 30s
     restart: unless-stopped
-    networks:
-      - batch_processor_network
 
   # Web application service (Windows container)
   web:
@@ -31,7 +26,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - BATCH_PROCESSOR_CONFIG=C:\\app\\batch_processor_config.yaml
+      - BATCH_PROCESSOR_CONFIG=C:/app/batch_processor_config.yaml
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - CELERY_BROKER_URL=redis://redis:6379/0
@@ -57,17 +52,14 @@ services:
       - URL_AUTO_CLEANUP_DUPLICATES=${URL_AUTO_CLEANUP_DUPLICATES:-true}
     volumes:
       - type: bind
-        source: .\\temp_files
-        target: C:\\app\\temp_files
+        source: C:/Webgruz/embedder/temp_files
+        target: C:/app/temp_files
       - type: bind
-        source: .\\chroma_db
-        target: C:\\app\\chroma_db
+        source: C:/Webgruz/embedder/chroma_db
+        target: C:/app/chroma_db
       - type: bind
-        source: .\\logs
-        target: C:\\app\\logs
-      - type: bind
-        source: .\\batch_processor_config.yaml
-        target: C:\\app\\batch_processor_config.yaml
+        source: C:/Webgruz/embedder/logs
+        target: C:/app/logs
     depends_on:
       redis:
         condition: service_healthy
@@ -76,10 +68,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 60s
     restart: unless-stopped
-    networks:
-      - batch_processor_network
 
   # Celery worker for processing tasks (Windows container)
   worker:
@@ -89,7 +79,7 @@ services:
     container_name: batch_processor_worker
     command: ["python", "-m", "celery", "-A", "batch_processor.workers.celery_app", "worker", "--loglevel=info", "--queues=processing,default"]
     environment:
-      - BATCH_PROCESSOR_CONFIG=C:\\app\\batch_processor_config.yaml
+      - BATCH_PROCESSOR_CONFIG=C:/app/batch_processor_config.yaml
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - CELERY_BROKER_URL=redis://redis:6379/0
@@ -115,17 +105,14 @@ services:
       - URL_AUTO_CLEANUP_DUPLICATES=${URL_AUTO_CLEANUP_DUPLICATES:-true}
     volumes:
       - type: bind
-        source: .\\temp_files
-        target: C:\\app\\temp_files
+        source: C:/Webgruz/embedder/temp_files
+        target: C:/app/temp_files
       - type: bind
-        source: .\\chroma_db
-        target: C:\\app\\chroma_db
+        source: C:/Webgruz/embedder/chroma_db
+        target: C:/app/chroma_db
       - type: bind
-        source: .\\logs
-        target: C:\\app\\logs
-      - type: bind
-        source: .\\batch_processor_config.yaml
-        target: C:\\app\\batch_processor_config.yaml
+        source: C:/Webgruz/embedder/logs
+        target: C:/app/logs
     depends_on:
       redis:
         condition: service_healthy
@@ -134,10 +121,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 60s
     restart: unless-stopped
-    networks:
-      - batch_processor_network
 
   # Celery worker for cleanup tasks (Windows container)
   cleanup_worker:
@@ -147,21 +132,18 @@ services:
     container_name: batch_processor_cleanup_worker
     command: ["python", "-m", "celery", "-A", "batch_processor.workers.celery_app", "worker", "--loglevel=info", "--queues=cleanup"]
     environment:
-      - BATCH_PROCESSOR_CONFIG=C:\\app\\batch_processor_config.yaml
+      - BATCH_PROCESSOR_CONFIG=C:/app/batch_processor_config.yaml
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
     volumes:
       - type: bind
-        source: .\\temp_files
-        target: C:\\app\\temp_files
+        source: C:/Webgruz/embedder/temp_files
+        target: C:/app/temp_files
       - type: bind
-        source: .\\logs
-        target: C:\\app\\logs
-      - type: bind
-        source: .\\batch_processor_config.yaml
-        target: C:\\app\\batch_processor_config.yaml
+        source: C:/Webgruz/embedder/logs
+        target: C:/app/logs
     depends_on:
       redis:
         condition: service_healthy
@@ -170,10 +152,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 60s
     restart: unless-stopped
-    networks:
-      - batch_processor_network
 
   # Celery beat scheduler for periodic tasks (Windows container)
   scheduler:
@@ -183,28 +163,20 @@ services:
     container_name: batch_processor_scheduler
     command: ["python", "-m", "celery", "-A", "batch_processor.workers.celery_app", "beat", "--loglevel=info"]
     environment:
-      - BATCH_PROCESSOR_CONFIG=C:\\app\\batch_processor_config.yaml
+      - BATCH_PROCESSOR_CONFIG=C:/app/batch_processor_config.yaml
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
     volumes:
       - type: bind
-        source: .\\logs
-        target: C:\\app\\logs
-      - type: bind
-        source: .\\batch_processor_config.yaml
-        target: C:\\app\\batch_processor_config.yaml
+        source: C:/Webgruz/embedder/logs
+        target: C:/app/logs
     depends_on:
       redis:
         condition: service_healthy
     restart: unless-stopped
-    networks:
-      - batch_processor_network
 
 volumes:
-  # Volumes не нужны, используем bind mounts
-
-networks:
-  batch_processor_network:
-    driver: nat
+  redis_data:
+    driver: local

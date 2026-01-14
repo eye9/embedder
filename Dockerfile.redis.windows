@@ -1,0 +1,27 @@
+# Windows Redis Dockerfile
+FROM mcr.microsoft.com/windows/servercore:ltsc2019
+
+# Set PowerShell as default shell
+SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
+
+# Download and install Redis for Windows
+RUN [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; \
+    Invoke-WebRequest -Uri 'https://github.com/microsoftarchive/redis/releases/download/win-3.0.504/Redis-x64-3.0.504.zip' -OutFile 'redis.zip' -UseBasicParsing; \
+    Expand-Archive -Path 'redis.zip' -DestinationPath 'C:/redis'; \
+    Remove-Item 'redis.zip' -Force
+
+# Create data directory
+RUN New-Item -ItemType Directory -Path C:/data -Force
+
+# Set working directory
+WORKDIR C:/redis
+
+# Expose Redis port
+EXPOSE 6379
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD powershell -Command "try { Test-NetConnection -ComputerName localhost -Port 6379 -InformationLevel Quiet } catch { exit 1 }"
+
+# Start Redis server
+CMD ["redis-server.exe", "--port", "6379", "--dir", "C:/data", "--appendonly", "yes"]

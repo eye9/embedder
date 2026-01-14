@@ -1,20 +1,24 @@
 version: '3.8'
 
 services:
-  # Redis service for task queue and caching (Windows container)
+  # Redis service using Windows container
   redis:
-    build:
-      context: .
-      dockerfile: Dockerfile.redis.windows
+    image: mcr.microsoft.com/windows/nanoserver:ltsc2019
     container_name: batch_processor_redis
     ports:
       - "6379:6379"
     volumes:
-      - type: bind
-        source: .\\redis_data
-        target: C:\\data
+      - redis_data:C:\\data
+    command: >
+      powershell -Command "
+      # Download and install Redis for Windows
+      [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12;
+      Invoke-WebRequest -Uri 'https://github.com/microsoftarchive/redis/releases/download/win-3.0.504/Redis-x64-3.0.504.zip' -OutFile 'redis.zip' -UseBasicParsing;
+      Expand-Archive -Path 'redis.zip' -DestinationPath 'C:\\redis';
+      & 'C:\\redis\\redis-server.exe' --port 6379 --appendonly yes
+      "
     healthcheck:
-      test: ["CMD", "powershell", "-Command", "Test-NetConnection -ComputerName localhost -Port 6379 -InformationLevel Quiet"]
+      test: ["CMD", "powershell", "-Command", "Test-NetConnection -ComputerName localhost -Port 6379"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -203,8 +207,9 @@ services:
       - batch_processor_network
 
 volumes:
-  # Volumes не нужны, используем bind mounts
+  redis_data:
+    driver: local
 
 networks:
   batch_processor_network:
-    driver: nat
+    driver: bridge

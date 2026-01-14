@@ -1,0 +1,31 @@
+# Simple Windows Redis using pre-built binaries
+FROM mcr.microsoft.com/windows/nanoserver:ltsc2019
+
+# Copy Redis binaries from a builder stage
+FROM mcr.microsoft.com/windows/servercore:ltsc2019 as builder
+
+# Set PowerShell as default shell
+SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop';"]
+
+# Download Redis
+RUN [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; \
+    Invoke-WebRequest -Uri 'https://github.com/microsoftarchive/redis/releases/download/win-3.0.504/Redis-x64-3.0.504.zip' -OutFile 'redis.zip' -UseBasicParsing; \
+    Expand-Archive -Path 'redis.zip' -DestinationPath 'C:\\redis'
+
+# Final stage
+FROM mcr.microsoft.com/windows/nanoserver:ltsc2019
+
+# Copy Redis from builder
+COPY --from=builder C:\\redis C:\\redis
+
+# Create data directory
+RUN mkdir C:\\data
+
+# Set working directory
+WORKDIR C:\\redis
+
+# Expose Redis port
+EXPOSE 6379
+
+# Start Redis server
+CMD ["redis-server.exe", "--port", "6379", "--dir", "C:\\data", "--appendonly", "yes", "--bind", "0.0.0.0"]

@@ -1,0 +1,27 @@
+# Alternative Windows Redis Dockerfile using Chocolatey
+FROM mcr.microsoft.com/windows/servercore:ltsc2019
+
+# Set PowerShell as default shell
+SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
+
+# Install Chocolatey and Redis
+RUN Set-ExecutionPolicy Bypass -Scope Process -Force; \
+    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; \
+    iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1')); \
+    choco install redis-64 -y --force
+
+# Create data directory
+RUN New-Item -ItemType Directory -Path C:\\data -Force
+
+# Set environment variables
+ENV REDIS_DATA_DIR=C:\\data
+
+# Expose Redis port
+EXPOSE 6379
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD powershell -Command "try { Test-NetConnection -ComputerName localhost -Port 6379 -InformationLevel Quiet } catch { exit 1 }"
+
+# Start Redis server
+CMD ["redis-server", "--port", "6379", "--dir", "C:\\data", "--appendonly", "yes", "--bind", "0.0.0.0"]

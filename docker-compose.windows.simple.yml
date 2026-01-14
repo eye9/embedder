@@ -1,7 +1,5 @@
-version: '3.8'
-
 services:
-  # Redis service for task queue and caching (Windows container)
+  # Redis service (Windows container)
   redis:
     build:
       context: .
@@ -10,17 +8,14 @@ services:
     ports:
       - "6379:6379"
     volumes:
-      - type: bind
-        source: .\\redis_data
-        target: C:\\data
+      - redis_data:C:/data
     healthcheck:
       test: ["CMD", "powershell", "-Command", "Test-NetConnection -ComputerName localhost -Port 6379 -InformationLevel Quiet"]
       interval: 30s
       timeout: 10s
       retries: 5
+      start_period: 30s
     restart: unless-stopped
-    networks:
-      - batch_processor_network
 
   # Web application service (Windows container)
   web:
@@ -76,10 +71,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 60s
     restart: unless-stopped
-    networks:
-      - batch_processor_network
 
   # Celery worker for processing tasks (Windows container)
   worker:
@@ -134,10 +127,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 60s
     restart: unless-stopped
-    networks:
-      - batch_processor_network
 
   # Celery worker for cleanup tasks (Windows container)
   cleanup_worker:
@@ -170,10 +161,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 60s
     restart: unless-stopped
-    networks:
-      - batch_processor_network
 
   # Celery beat scheduler for periodic tasks (Windows container)
   scheduler:
@@ -199,12 +188,3 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
-    networks:
-      - batch_processor_network
-
-volumes:
-  # Volumes не нужны, используем bind mounts
-
-networks:
-  batch_processor_network:
-    driver: nat

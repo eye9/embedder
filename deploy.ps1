@@ -31,7 +31,7 @@ if ($ContainerMode -eq "auto") {
         $DockerComposeFile = "docker-compose.hybrid.yml"
     }
 } elseif ($ContainerMode -eq "windows") {
-    $DockerComposeFile = "docker-compose.windows.yml"
+    $DockerComposeFile = "docker-compose.windows.final.yml"
 } elseif ($ContainerMode -eq "hybrid") {
     $DockerComposeFile = "docker-compose.hybrid.yml"
 } else {

@@ -1,17 +1,14 @@
-# Windows-compatible Dockerfile for Batch Excel Processor
-# Use Windows Server Core and install Python
-
-FROM mcr.microsoft.com/windows/servercore:ltsc2019
+# Simplified Windows Dockerfile
+FROM mcr.microsoft.com/dotnet/framework/runtime:4.8-windowsservercore-ltsc2019
 
 # Set PowerShell as default shell
-SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
+SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop';"]
 
-# Install Python 3.11 using Chocolatey (more reliable for Windows containers)
-RUN Set-ExecutionPolicy Bypass -Scope Process -Force; \
-    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; \
-    iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1')); \
-    choco install python --version=3.11.7 -y --force; \
-    refreshenv
+# Download and install Python manually
+RUN Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.11.7/python-3.11.7-amd64.exe' -OutFile 'python-installer.exe' -UseBasicParsing; \
+    Start-Process python-installer.exe -ArgumentList '/quiet InstallAllUsers=1 PrependPath=1 AssociateFiles=1' -Wait; \
+    Remove-Item python-installer.exe; \
+    setx PATH $($env:PATH + ';C:\Program Files\Python311;C:\Program Files\Python311\Scripts') /M
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
