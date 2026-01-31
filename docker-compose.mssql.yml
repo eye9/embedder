@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2019-latest
+    container_name: mssql_server
+    environment:
+      - ACCEPT_EULA=Y
+      - SA_PASSWORD=YourStrong!Passw0rd
+      - MSSQL_PID=Express
+    ports:
+      - "1433:1433"
+    volumes:
+      # Папка для файлов базы данных (.mdf и .ldf)
+      - ./mssql/data:/var/opt/mssql/data
+      # Папка для логов
+      - ./mssql/log:/var/opt/mssql/log
+      # Папка для бэкапов
+      - ./mssql/backup:/var/opt/mssql/backup
+    restart: unless-stopped
+    networks:
+      - mssql_network
+
+networks:
+  mssql_network:
+    driver: bridge
