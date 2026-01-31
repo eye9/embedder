@@ -73,8 +73,18 @@ Your Excel file must contain:
 
 The system will add:
 
-- **TNVED_Code**: The assigned TNVED code
+- **TNVED_Code**: The assigned TNVED code (with color coding)
 - **Selection_Reason**: Explanation for the code selection
+
+### Color Coding
+
+The system automatically applies color coding to TNVED_Code cells based on confidence:
+
+- **🟢 Green** (`Score >= 0.185`): High confidence match - code can be used
+- **🔴 Red** (`Score < 0.185`): Low confidence - manual review recommended  
+- **⚪ White** (`Score = 1.0`): URL match - highest reliability
+
+See [Color Coding Guide](docs/COLOR_CODING_GUIDE.md) for details.
 
 ## Processing Modes
 

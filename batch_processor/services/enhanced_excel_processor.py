@@ -367,7 +367,12 @@ class EnhancedExcelProcessor(ExcelProcessor):
         preserve_existing_hts: bool = True
     ) -> None:
         """
-        Write hybrid processing results to Excel file with URL metadata.
+        Write hybrid processing results to Excel file with URL metadata and color coding.
+        
+        Color coding based on similarity score:
+        - Score = 1.0 (URL match): No color (white)
+        - Score >= 0.185: Green background
+        - Score < 0.185: Red background
         
         Args:
             original_file: Path to the original Excel file
@@ -391,7 +396,7 @@ class EnhancedExcelProcessor(ExcelProcessor):
                 }
                 standard_results.append(standard_result)
             
-            # Use parent class method for writing
+            # Use parent class method for writing (includes color coding)
             self.write_results(original_file, standard_results, output_file, preserve_existing_hts)
             
             # Add URL-specific metadata if possible
@@ -400,7 +405,7 @@ class EnhancedExcelProcessor(ExcelProcessor):
             except Exception as e:
                 logger.warning(f"Could not add URL metadata to output file: {e}")
             
-            logger.info(f"Successfully wrote {len(results)} hybrid results to {output_file}")
+            logger.info(f"Successfully wrote {len(results)} hybrid results to {output_file} with color coding")
             
         except Exception as e:
             logger.error(f"Failed to write hybrid results: {e}")

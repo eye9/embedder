@@ -476,7 +476,12 @@ class ExcelProcessor:
         preserve_existing_hts: bool = True
     ) -> None:
         """
-        Write processing results to a new Excel file.
+        Write processing results to a new Excel file with color-coded TNVED codes.
+        
+        Color coding based on similarity score:
+        - Score = 1.0 (URL match): No color (white)
+        - Score >= 0.185: Green background
+        - Score < 0.185: Red background
         
         Args:
             original_file: Path to the original Excel file
@@ -487,6 +492,9 @@ class ExcelProcessor:
         logger.info(f"Writing results to: {output_file}")
         
         try:
+            from openpyxl import load_workbook
+            from openpyxl.styles import PatternFill
+            
             # Read the original file
             df_original = pd.read_excel(original_file, engine='openpyxl')
             
@@ -506,6 +514,9 @@ class ExcelProcessor:
             if 'Selection_Reason' not in df_output.columns:
                 df_output['Selection_Reason'] = ''
             
+            # Track which rows need coloring and their scores
+            row_colors = {}  # {row_idx: confidence_score}
+            
             # If preserving existing HTS codes and there's an existing column, copy values
             if preserve_existing_hts and existing_hts_col:
                 # Copy existing HTS codes to TNVED_Code column where they exist
@@ -523,15 +534,84 @@ class ExcelProcessor:
                        str(df_output.loc[row_idx, 'TNVED_Code']).strip() == '':
                         df_output.loc[row_idx, 'TNVED_Code'] = result.get('tnved_code', '')
                         df_output.loc[row_idx, 'Selection_Reason'] = result.get('selection_reason', '')
+                        
+                        # Store confidence score for coloring
+                        confidence_score = result.get('confidence_score')
+                        if confidence_score is not None:
+                            row_colors[row_idx] = confidence_score
             
             # Write to Excel file
             df_output.to_excel(output_file, index=False, engine='openpyxl')
             
-            logger.info(f"Successfully wrote {len(results)} results to {output_file}")
+            # Apply color coding to TNVED_Code column
+            self._apply_color_coding(output_file, row_colors)
+            
+            logger.info(f"Successfully wrote {len(results)} results to {output_file} with color coding")
             
         except Exception as e:
             logger.error(f"Failed to write results: {e}")
             raise
+    
+    def _apply_color_coding(self, excel_file: Path, row_colors: Dict[int, float]) -> None:
+        """
+        Apply color coding to TNVED_Code cells based on similarity scores.
+        
+        Color rules:
+        - Score = 1.0 (URL match): No color (white/default)
+        - Score >= 0.185: Green background (00FF00)
+        - Score < 0.185: Red background (FF0000)
+        
+        Args:
+            excel_file: Path to the Excel file
+            row_colors: Dictionary mapping row indices to confidence scores
+        """
+        try:
+            from openpyxl import load_workbook
+            from openpyxl.styles import PatternFill
+            
+            # Load the workbook
+            wb = load_workbook(excel_file)
+            ws = wb.active
+            
+            # Find TNVED_Code column index
+            tnved_col_idx = None
+            for idx, cell in enumerate(ws[1], start=1):
+                if cell.value == 'TNVED_Code':
+                    tnved_col_idx = idx
+                    break
+            
+            if tnved_col_idx is None:
+                logger.warning("TNVED_Code column not found, skipping color coding")
+                return
+            
+            # Define color fills
+            green_fill = PatternFill(start_color="00FF00", end_color="00FF00", fill_type="solid")
+            red_fill = PatternFill(start_color="FF0000", end_color="FF0000", fill_type="solid")
+            
+            # Apply colors based on scores
+            for row_idx, confidence_score in row_colors.items():
+                # Excel rows are 1-indexed and have header, so add 2
+                excel_row = row_idx + 2
+                cell = ws.cell(row=excel_row, column=tnved_col_idx)
+                
+                # Apply color based on score
+                if confidence_score == 1.0:
+                    # URL match - no color (leave default)
+                    pass
+                elif confidence_score >= 0.185:
+                    # High confidence - green
+                    cell.fill = green_fill
+                else:
+                    # Low confidence - red
+                    cell.fill = red_fill
+            
+            # Save the workbook
+            wb.save(excel_file)
+            logger.debug(f"Applied color coding to {len(row_colors)} cells")
+            
+        except Exception as e:
+            logger.warning(f"Failed to apply color coding: {e}")
+            # Don't raise - color coding is optional enhancement
     
     def get_processing_statistics(
         self, 
