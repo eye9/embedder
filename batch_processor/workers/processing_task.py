@@ -1150,7 +1150,8 @@ class ProcessingTask(Task):
                 results_dict.append({
                     'row_index': result.row_index,
                     'tnved_code': result.tnved_code or '',
-                    'selection_reason': result.selection_reason
+                    'selection_reason': result.selection_reason,
+                    'confidence_score': result.confidence_score
                 })
             
             # Generate output filename
