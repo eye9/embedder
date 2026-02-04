@@ -107,3 +107,67 @@ class AdminValidationResult(BaseModel):
         if not v and 'error_message' in values and not values['error_message']:
             raise ValueError("Invalid files must have an error_message")
         return v
+
+
+class AdminErrorResponse(BaseModel):
+    """Error response model for admin upload operations."""
+    
+    error: str = Field(description="Error type or category")
+    detail: str = Field(description="Detailed error message")
+    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Error timestamp")
+    upload_id: Optional[str] = Field(default=None, description="Upload identifier if available")
+    error_code: Optional[str] = Field(default=None, description="Specific error code for programmatic handling")
+    
+    # Additional context for specific error types
+    missing_columns: Optional[List[str]] = Field(default=None, description="Missing required columns (validation errors)")
+    supported_formats: Optional[List[str]] = Field(default=None, description="Supported file formats (format errors)")
+    max_file_size_mb: Optional[int] = Field(default=None, description="Maximum file size in MB (size errors)")
+    file_info: Optional[Dict[str, Any]] = Field(default=None, description="File information for context")
+    
+    class Config:
+        schema_extra = {
+            "examples": [
+                {
+                    "error": "ValidationError",
+                    "detail": "Missing required columns: Code, Description",
+                    "timestamp": "2024-01-15T10:30:00Z",
+                    "upload_id": "tnved_abc123_1705312200",
+                    "error_code": "MISSING_COLUMNS",
+                    "missing_columns": ["Code", "Description"]
+                },
+                {
+                    "error": "AuthenticationError", 
+                    "detail": "Invalid credentials provided",
+                    "timestamp": "2024-01-15T10:30:00Z",
+                    "error_code": "INVALID_CREDENTIALS"
+                },
+                {
+                    "error": "FileSizeError",
+                    "detail": "File size exceeds maximum limit of 100MB",
+                    "timestamp": "2024-01-15T10:30:00Z",
+                    "error_code": "FILE_TOO_LARGE",
+                    "max_file_size_mb": 100
+                }
+            ]
+        }
+
+
+class AdminConflictResponse(BaseModel):
+    """Conflict response for concurrent upload attempts."""
+    
+    error: str = Field(default="ConflictError", description="Error type")
+    detail: str = Field(description="Detailed conflict message")
+    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Error timestamp")
+    active_upload_id: Optional[str] = Field(default=None, description="ID of currently active upload")
+    retry_after_seconds: Optional[int] = Field(default=None, description="Suggested retry delay in seconds")
+    
+    class Config:
+        schema_extra = {
+            "example": {
+                "error": "ConflictError",
+                "detail": "User already has an upload in progress. Please wait for completion or cancel the existing upload.",
+                "timestamp": "2024-01-15T10:30:00Z",
+                "active_upload_id": "tnved_def456_1705312100",
+                "retry_after_seconds": 30
+            }
+        }

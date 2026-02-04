@@ -426,6 +426,184 @@ class StructuredLogger:
         )
         self._log_event(event)
     
+    def log_admin_upload_initiation(
+        self,
+        user: str,
+        upload_id: str,
+        upload_type: str,
+        filename: str,
+        file_size: int,
+        source_name: str,
+        total_records: int
+    ):
+        """Log admin upload initiation."""
+        event = LogEvent(
+            timestamp=datetime.utcnow(),
+            level=LogLevel.INFO,
+            category=LogCategory.FILE_UPLOAD,
+            message=f"Admin upload initiated: {upload_type} upload by {user}",
+            user=user,
+            session_id=upload_id,
+            task_id=upload_id,
+            extra_data={
+                "upload_type": upload_type,
+                "filename": filename,
+                "file_size_bytes": file_size,
+                "file_size_mb": round(file_size / (1024 * 1024), 2),
+                "source_name": source_name,
+                "total_records": total_records,
+                "operation": "admin_upload_start"
+            }
+        )
+        self._log_event(event)
+    
+    def log_admin_validation_failure(
+        self,
+        user: str,
+        upload_id: str,
+        upload_type: str,
+        filename: str,
+        error_type: str,
+        error_details: Dict[str, Any]
+    ):
+        """Log admin upload validation failure."""
+        event = LogEvent(
+            timestamp=datetime.utcnow(),
+            level=LogLevel.WARNING,
+            category=LogCategory.FILE_UPLOAD,
+            message=f"Admin upload validation failed: {error_type} for {filename}",
+            user=user,
+            session_id=upload_id,
+            task_id=upload_id,
+            error_type=error_type,
+            error_message=error_details.get("message", "Unknown validation error"),
+            extra_data={
+                "upload_type": upload_type,
+                "filename": filename,
+                "error_type": error_type,
+                "missing_columns": error_details.get("missing_columns", []),
+                "supported_formats": error_details.get("supported_formats", []),
+                "file_extension": error_details.get("file_extension"),
+                "operation": "admin_validation_failure"
+            }
+        )
+        self._log_event(event)
+    
+    def log_admin_processing_batch(
+        self,
+        upload_id: str,
+        user: str,
+        batch_number: int,
+        processed_records: int,
+        total_records: int,
+        batch_size: int,
+        duration_ms: float,
+        error_count: int = 0
+    ):
+        """Log admin upload batch processing progress."""
+        progress_percent = (processed_records / total_records) * 100 if total_records > 0 else 0
+        
+        event = LogEvent(
+            timestamp=datetime.utcnow(),
+            level=LogLevel.DEBUG,
+            category=LogCategory.PROCESSING,
+            message=f"Admin upload batch {batch_number} processed: {processed_records}/{total_records} records ({progress_percent:.1f}%)",
+            user=user,
+            session_id=upload_id,
+            task_id=upload_id,
+            duration_ms=duration_ms,
+            extra_data={
+                "batch_number": batch_number,
+                "processed_records": processed_records,
+                "total_records": total_records,
+                "batch_size": batch_size,
+                "progress_percent": progress_percent,
+                "error_count": error_count,
+                "records_per_second": (batch_size / duration_ms * 1000) if duration_ms > 0 else 0,
+                "operation": "admin_batch_processing"
+            }
+        )
+        self._log_event(event)
+    
+    def log_admin_upload_completion(
+        self,
+        user: str,
+        upload_id: str,
+        upload_type: str,
+        filename: str,
+        source_name: str,
+        success: bool,
+        total_records: int,
+        successful_records: int,
+        failed_records: int,
+        processing_time_seconds: float,
+        records_per_second: float,
+        database_total_records: int,
+        error_summary: Optional[Dict[str, int]] = None
+    ):
+        """Log admin upload completion with comprehensive statistics."""
+        event = LogEvent(
+            timestamp=datetime.utcnow(),
+            level=LogLevel.INFO if success else LogLevel.ERROR,
+            category=LogCategory.PROCESSING,
+            message=f"Admin upload {'completed' if success else 'failed'}: {successful_records}/{total_records} records processed",
+            user=user,
+            session_id=upload_id,
+            task_id=upload_id,
+            duration_ms=processing_time_seconds * 1000,
+            extra_data={
+                "upload_type": upload_type,
+                "filename": filename,
+                "source_name": source_name,
+                "success": success,
+                "total_records": total_records,
+                "successful_records": successful_records,
+                "failed_records": failed_records,
+                "success_rate_percent": (successful_records / total_records * 100) if total_records > 0 else 0,
+                "processing_time_seconds": processing_time_seconds,
+                "records_per_second": records_per_second,
+                "database_total_records": database_total_records,
+                "error_summary": error_summary or {},
+                "operation": "admin_upload_completion"
+            }
+        )
+        self._log_event(event)
+    
+    def log_admin_error_context(
+        self,
+        user: str,
+        upload_id: str,
+        upload_type: str,
+        error_type: str,
+        error_message: str,
+        context: Dict[str, Any],
+        filename: Optional[str] = None,
+        processed_records: Optional[int] = None,
+        total_records: Optional[int] = None
+    ):
+        """Log admin upload error with full context."""
+        event = LogEvent(
+            timestamp=datetime.utcnow(),
+            level=LogLevel.ERROR,
+            category=LogCategory.ERROR,
+            message=f"Admin upload error: {error_type} - {error_message}",
+            user=user,
+            session_id=upload_id,
+            task_id=upload_id,
+            error_type=error_type,
+            error_message=error_message,
+            extra_data={
+                "upload_type": upload_type,
+                "filename": filename,
+                "processed_records": processed_records,
+                "total_records": total_records,
+                "progress_percent": (processed_records / total_records * 100) if (processed_records and total_records) else 0,
+                "context": context,
+                "operation": "admin_upload_error"
+            }
+        )
+        self._log_event(event)
+    
     def get_error_summary(self, hours: int = 24) -> Dict[str, Any]:
         """Get error summary for the specified time period."""
         cutoff_time = datetime.utcnow() - timedelta(hours=hours)

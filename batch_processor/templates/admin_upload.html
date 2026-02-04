@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Data Upload - Batch Processor</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <link rel="stylesheet" href="/static/css/admin_upload.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- Admin Header -->
+        <div class="admin-header">
+            <h1><i class="fas fa-shield-alt"></i> Admin Data Upload</h1>
+            <p class="subtitle">Upload TNVED codes and URL mappings to the database</p>
+        </div>
+
+        <!-- Upload Sections -->
+        <div class="upload-sections">
+            <!-- TNVED Upload Section -->
+            <div class="upload-section">
+                <h2><i class="fas fa-code"></i> TNVED Codes Upload</h2>
+                <p class="mb-20" style="color: #666; font-size: 0.9rem;">
+                    Upload Excel or Parquet files containing TNVED codes with descriptions.
+                    Required columns: <strong>Code</strong>, <strong>Description</strong>
+                </p>
+                
+                <form id="tnved-upload-form">
+                    <div class="form-group">
+                        <label for="tnved-source-name">
+                            <i class="fas fa-tag"></i> Source Name
+                        </label>
+                        <input 
+                            type="text" 
+                            id="tnved-source-name" 
+                            name="source_name" 
+                            placeholder="e.g., import_2024-01, supplier_catalog" 
+                            required
+                            pattern="[a-zA-Z0-9_-]+"
+                            title="Only alphanumeric characters, hyphens, and underscores allowed"
+                        >
+                    </div>
+                    
+                    <div class="file-input-wrapper" id="tnved-file-wrapper">
+                        <input 
+                            type="file" 
+                            id="tnved-file-input" 
+                            name="file" 
+                            accept=".xlsx,.xls,.parquet" 
+                            required
+                        >
+                        <label for="tnved-file-input" class="file-input-label">
+                            <i class="fas fa-file-upload"></i>
+                            <span>Select TNVED file or drag here</span>
+                            <small style="margin-top: 5px; color: #999;">
+                                Supported: .xlsx, .xls, .parquet (max 100MB)
+                            </small>
+                        </label>
+                    </div>
+                    
+                    <button type="submit" class="upload-btn" id="tnved-upload-btn">
+                        <i class="fas fa-upload"></i>
+                        Upload TNVED Data
+                    </button>
+                </form>
+                
+                <!-- TNVED Progress -->
+                <div class="progress-container" id="tnved-progress">
+                    <div class="progress-header">
+                        <h3><i class="fas fa-cog fa-spin"></i> Processing TNVED Upload</h3>
+                    </div>
+                    <div class="progress-stats">
+                        <div class="progress-stat">
+                            <span class="value" id="tnved-processed">0</span>
+                            <div class="label">Processed</div>
+                        </div>
+                        <div class="progress-stat">
+                            <span class="value" id="tnved-total">0</span>
+                            <div class="label">Total</div>
+                        </div>
+                        <div class="progress-stat">
+                            <span class="value" id="tnved-errors">0</span>
+                            <div class="label">Errors</div>
+                        </div>
+                        <div class="progress-stat">
+                            <span class="value" id="tnved-speed">0</span>
+                            <div class="label">Records/sec</div>
+                        </div>
+                    </div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="tnved-progress-fill"></div>
+                        </div>
+                        <div class="progress-text" id="tnved-progress-text">0% complete</div>
+                    </div>
+                </div>
+                
+                <!-- TNVED Summary -->
+                <div class="summary-container" id="tnved-summary">
+                    <div class="summary-header">
+                        <h3><i class="fas fa-check-circle"></i> TNVED Upload Complete</h3>
+                    </div>
+                    <div class="summary-stats" id="tnved-summary-stats">
+                        <!-- Summary stats will be populated by JavaScript -->
+                    </div>
+                </div>
+                
+                <!-- TNVED Errors -->
+                <div class="error-container" id="tnved-errors-container">
+                    <div class="error-header">
+                        <h4><i class="fas fa-exclamation-triangle"></i> Upload Error</h4>
+                    </div>
+                    <div id="tnved-error-message"></div>
+                </div>
+            </div>
+
+            <!-- URL Upload Section -->
+            <div class="upload-section">
+                <h2><i class="fas fa-link"></i> URL Mappings Upload</h2>
+                <p class="mb-20" style="color: #666; font-size: 0.9rem;">
+                    Upload Excel or Parquet files containing URL to TNVED code mappings.
+                    Required columns: <strong>URL</strong>, <strong>Code</strong>. Optional: <strong>Description</strong>
+                </p>
+                
+                <form id="url-upload-form">
+                    <div class="form-group">
+                        <label for="url-source-name">
+                            <i class="fas fa-tag"></i> Source Name
+                        </label>
+                        <input 
+                            type="text" 
+                            id="url-source-name" 
+                            name="source_name" 
+                            placeholder="e.g., ozon_catalog, wildberries_2024" 
+                            required
+                            pattern="[a-zA-Z0-9_-]+"
+                            title="Only alphanumeric characters, hyphens, and underscores allowed"
+                        >
+                    </div>
+                    
+                    <div class="file-input-wrapper" id="url-file-wrapper">
+                        <input 
+                            type="file" 
+                            id="url-file-input" 
+                            name="file" 
+                            accept=".xlsx,.xls,.parquet" 
+                            required
+                        >
+                        <label for="url-file-input" class="file-input-label">
+                            <i class="fas fa-file-upload"></i>
+                            <span>Select URL mapping file or drag here</span>
+                            <small style="margin-top: 5px; color: #999;">
+                                Supported: .xlsx, .xls, .parquet (max 100MB)
+                            </small>
+                        </label>
+                    </div>
+                    
+                    <button type="submit" class="upload-btn" id="url-upload-btn">
+                        <i class="fas fa-upload"></i>
+                        Upload URL Mappings
+                    </button>
+                </form>
+                
+                <!-- URL Progress -->
+                <div class="progress-container" id="url-progress">
+                    <div class="progress-header">
+                        <h3><i class="fas fa-cog fa-spin"></i> Processing URL Upload</h3>
+                    </div>
+                    <div class="progress-stats">
+                        <div class="progress-stat">
+                            <span class="value" id="url-processed">0</span>
+                            <div class="label">Processed</div>
+                        </div>
+                        <div class="progress-stat">
+                            <span class="value" id="url-total">0</span>
+                            <div class="label">Total</div>
+                        </div>
+                        <div class="progress-stat">
+                            <span class="value" id="url-valid">0</span>
+                            <div class="label">Valid URLs</div>
+                        </div>
+                        <div class="progress-stat">
+                            <span class="value" id="url-invalid">0</span>
+                            <div class="label">Invalid</div>
+                        </div>
+                        <div class="progress-stat">
+                            <span class="value" id="url-speed">0</span>
+                            <div class="label">Records/sec</div>
+                        </div>
+                    </div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="url-progress-fill"></div>
+                        </div>
+                        <div class="progress-text" id="url-progress-text">0% complete</div>
+                    </div>
+                </div>
+                
+                <!-- URL Summary -->
+                <div class="summary-container" id="url-summary">
+                    <div class="summary-header">
+                        <h3><i class="fas fa-check-circle"></i> URL Upload Complete</h3>
+                    </div>
+                    <div class="summary-stats" id="url-summary-stats">
+                        <!-- Summary stats will be populated by JavaScript -->
+                    </div>
+                </div>
+                
+                <!-- URL Errors -->
+                <div class="error-container" id="url-errors-container">
+                    <div class="error-header">
+                        <h4><i class="fas fa-exclamation-triangle"></i> Upload Error</h4>
+                    </div>
+                    <div id="url-error-message"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>&copy; 2024 Admin Data Upload. Secure data management interface.</p>
+        </footer>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay" style="display: none;">
+        <div class="loading-spinner">
+            <i class="fas fa-spinner fa-spin"></i>
+            <p>Processing upload...</p>
+        </div>
+    </div>
+
+    <script src="/static/js/admin_upload.js"></script>
+</body>
+</html>

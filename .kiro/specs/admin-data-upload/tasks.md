@@ -13,8 +13,8 @@ This implementation plan breaks down the admin data upload feature into discrete
   - Add configuration section to config.yaml for admin_upload settings
   - _Requirements: 4.1, 7.3, 11.1, 11.5, 12.1_
 
-- [ ] 2. Implement file upload validator
-  - [ ] 2.1 Create AdminUploadValidator class in batch_processor/web/validators/upload_validator.py
+- [x] 2. Implement file upload validator
+  - [x] 2.1 Create AdminUploadValidator class in batch_processor/web/validators/upload_validator.py
     - Implement validate_file_format() for extension and size validation
     - Implement validate_source_name() for alphanumeric/hyphen/underscore validation
     - Define constants for required columns, supported formats, max file size
@@ -24,13 +24,13 @@ This implementation plan breaks down the admin data upload feature into discrete
     - **Property 1: File Format Acceptance**
     - **Validates: Requirements 2.1, 3.1**
   
-  - [ ] 2.3 Implement validate_tnved_file() method
+  - [x] 2.3 Implement validate_tnved_file() method
     - Read file using pandas (support Excel and Parquet)
     - Check for required columns: Code, Description
     - Return ValidationResult with missing columns list
     - _Requirements: 2.2, 6.1, 6.2_
   
-  - [ ] 2.4 Implement validate_url_file() method
+  - [x] 2.4 Implement validate_url_file() method
     - Read file using pandas (support Excel and Parquet)
     - Check for required columns: URL, Code
     - Check for optional column: Description
@@ -51,13 +51,13 @@ This implementation plan breaks down the admin data upload feature into discrete
     - Test oversized files
     - _Requirements: 6.2, 11.1, 11.2_
 
-- [ ] 3. Implement TNVED upload processor
-  - [ ] 3.1 Create TNVEDUploadProcessor class in batch_processor/web/processors/tnved_processor.py
+- [x] 3. Implement TNVED upload processor
+  - [x] 3.1 Create TNVEDUploadProcessor class in batch_processor/web/processors/tnved_processor.py
     - Initialize with db_path and batch_size parameters
     - Set up TextNormalizer and EmbeddingGenerator instances
     - _Requirements: 7.1, 7.2, 7.3, 7.4_
   
-  - [ ] 3.2 Implement _normalize_codes() method
+  - [x] 3.2 Implement _normalize_codes() method
     - Convert codes to strings
     - Remove non-digit characters
     - Zero-pad to 10 digits
@@ -67,7 +67,7 @@ This implementation plan breaks down the admin data upload feature into discrete
     - **Property 3: TNVED Code Normalization**
     - **Validates: Requirements 2.3**
   
-  - [ ] 3.4 Implement _deduplicate_codes() method
+  - [x] 3.4 Implement _deduplicate_codes() method
     - Remove duplicate codes keeping first occurrence
     - Track deduplication count
     - _Requirements: 2.5, 12.5_
@@ -76,7 +76,7 @@ This implementation plan breaks down the admin data upload feature into discrete
     - **Property 6: Deduplication by Key** (TNVED part)
     - **Validates: Requirements 2.5, 12.5**
   
-  - [ ] 3.6 Implement process_upload() async method
+  - [x] 3.6 Implement process_upload() async method
     - Read file into DataFrame
     - Normalize codes
     - Deduplicate codes
@@ -96,13 +96,13 @@ This implementation plan breaks down the admin data upload feature into discrete
     - Test progress callback invocation
     - _Requirements: 2.4, 2.6, 5.2, 7.3_
 
-- [ ] 4. Implement URL upload processor
-  - [ ] 4.1 Create URLUploadProcessor class in batch_processor/web/processors/url_processor.py
+- [x] 4. Implement URL upload processor
+  - [x] 4.1 Create URLUploadProcessor class in batch_processor/web/processors/url_processor.py
     - Initialize with chroma_client and batch_size parameters
     - Create OptimizedURLDatabaseManager instance
     - _Requirements: 7.1, 7.3_
   
-  - [ ] 4.2 Implement _validate_and_normalize_urls() method
+  - [x] 4.2 Implement _validate_and_normalize_urls() method
     - Use URLNormalizer service to normalize URLs
     - Collect invalid URLs with error messages
     - Return valid DataFrame and error list
@@ -112,13 +112,13 @@ This implementation plan breaks down the admin data upload feature into discrete
     - **Property 4: URL Normalization Consistency**
     - **Validates: Requirements 3.3**
   
-  - [ ] 4.4 Implement _validate_codes() method
+  - [x] 4.4 Implement _validate_codes() method
     - Validate TNVED codes are 10 digits or can be normalized
     - Collect invalid codes with error messages
     - Return valid DataFrame and error list
     - _Requirements: 3.5_
   
-  - [ ] 4.5 Implement _deduplicate_urls() method
+  - [x] 4.5 Implement _deduplicate_urls() method
     - Remove duplicate URLs keeping first occurrence
     - Track deduplication count
     - _Requirements: 3.6, 12.5_
@@ -127,7 +127,7 @@ This implementation plan breaks down the admin data upload feature into discrete
     - **Property 6: Deduplication by Key** (URL part)
     - **Validates: Requirements 3.6, 12.5**
   
-  - [ ] 4.7 Implement process_upload() async method
+  - [x] 4.7 Implement process_upload() async method
     - Read file into DataFrame
     - Validate and normalize URLs
     - Validate codes
@@ -149,13 +149,13 @@ This implementation plan breaks down the admin data upload feature into discrete
     - Test progress callback invocation
     - _Requirements: 3.4, 3.5, 3.7, 5.2, 7.3_
 
-- [ ] 5. Implement progress tracker
-  - [ ] 5.1 Create UploadProgressTracker class in batch_processor/web/utils/progress_tracker.py
+- [x] 5. Implement progress tracker
+  - [x] 5.1 Create UploadProgressTracker class in batch_processor/web/utils/progress_tracker.py
     - Initialize with total_records
     - Track processed_records and start_time
     - _Requirements: 5.1, 5.2_
   
-  - [ ] 5.2 Implement update() method
+  - [x] 5.2 Implement update() method
     - Calculate progress percentage
     - Calculate records per second
     - Calculate ETA in seconds
@@ -172,20 +172,20 @@ This implementation plan breaks down the admin data upload feature into discrete
     - Test records per second calculation
     - _Requirements: 5.2, 5.3, 8.5_
 
-- [ ] 6. Implement admin upload router endpoints
-  - [ ] 6.1 Create admin_upload.py router with authentication
+- [x] 6. Implement admin upload router endpoints
+  - [x] 6.1 Create admin_upload.py router with authentication
     - Import FastAPI, UploadFile, Form, Depends
     - Import require_auth from auth.py
     - Create APIRouter with prefix="/admin/upload"
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 4.1_
   
-  - [ ] 6.2 Implement GET /admin/upload/ endpoint
+  - [x] 6.2 Implement GET /admin/upload/ endpoint
     - Serve HTML upload interface
     - Require authentication via require_auth dependency
     - Return HTMLResponse with upload form
     - _Requirements: 1.1, 1.2, 4.1, 4.2_
   
-  - [ ] 6.3 Implement POST /admin/upload/tnved endpoint
+  - [x] 6.3 Implement POST /admin/upload/tnved endpoint
     - Accept file: UploadFile and source_name: str
     - Require authentication
     - Save file to temporary location
@@ -195,7 +195,7 @@ This implementation plan breaks down the admin data upload feature into discrete
     - Clean up temporary files
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 4.4, 4.5, 4.6, 9.1, 9.2, 10.5_
   
-  - [ ] 6.4 Implement POST /admin/upload/urls endpoint
+  - [x] 6.4 Implement POST /admin/upload/urls endpoint
     - Accept file: UploadFile and source_name: str
     - Require authentication
     - Save file to temporary location
@@ -205,7 +205,7 @@ This implementation plan breaks down the admin data upload feature into discrete
     - Clean up temporary files
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 4.4, 4.5, 4.6, 9.1, 9.2, 10.5_
   
-  - [ ] 6.5 Implement POST /admin/upload/validate endpoint
+  - [x] 6.5 Implement POST /admin/upload/validate endpoint
     - Accept file: UploadFile and upload_type: str
     - Require authentication
     - Validate file without processing
@@ -230,8 +230,8 @@ This implementation plan breaks down the admin data upload feature into discrete
     - Test error responses for validation failures
     - _Requirements: 1.1, 1.2, 1.3, 6.1, 6.2, 6.3, 6.4_
 
-- [ ] 7. Create frontend HTML and JavaScript
-  - [ ] 7.1 Create admin_upload.html template in batch_processor/templates/
+- [x] 7. Create frontend HTML and JavaScript
+  - [x] 7.1 Create admin_upload.html template in batch_processor/templates/
     - Create two upload sections (TNVED and URL)
     - Add source name input fields
     - Add file input fields with accept attributes
@@ -239,7 +239,7 @@ This implementation plan breaks down the admin data upload feature into discrete
     - Add progress display divs (hidden by default)
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7_
   
-  - [ ] 7.2 Implement JavaScript upload functions
+  - [x] 7.2 Implement JavaScript upload functions
     - Create uploadFile() function for form submission
     - Create pollProgress() function for progress updates
     - Create updateProgressBar() function for UI updates
@@ -247,15 +247,15 @@ This implementation plan breaks down the admin data upload feature into discrete
     - Create showError() function for error display
     - _Requirements: 4.6, 5.1, 5.2, 5.3, 5.4, 5.5, 6.4, 6.5, 8.1, 8.2, 8.3, 8.4, 8.5, 8.6_
   
-  - [ ] 7.3 Add CSS styling for upload interface
+  - [x] 7.3 Add CSS styling for upload interface
     - Style upload sections
     - Style progress bars
     - Style summary display
     - Style error messages
     - _Requirements: 4.1, 4.2, 5.1, 5.4, 5.5_
 
-- [ ] 8. Implement error handling and logging
-  - [ ] 8.1 Add error response models and handlers
+- [x] 8. Implement error handling and logging
+  - [x] 8.1 Add error response models and handlers
     - Create error response format with timestamp and details
     - Add HTTPException handlers for validation errors
     - Add handlers for authentication errors (401)
@@ -263,7 +263,7 @@ This implementation plan breaks down the admin data upload feature into discrete
     - Add handlers for concurrent upload conflicts (409)
     - _Requirements: 1.3, 5.5, 6.1, 6.2, 6.3, 6.4, 6.5, 11.2_
   
-  - [ ] 8.2 Implement structured logging for admin uploads
+  - [x] 8.2 Implement structured logging for admin uploads
     - Log upload initiation with user, filename, size
     - Log validation failures with details
     - Log processing progress at batch boundaries
