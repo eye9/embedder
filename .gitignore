@@ -22,6 +22,7 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+xlsx/
 
 # Virtual Environment
 venv/
@@ -55,6 +56,9 @@ logs/
 chroma_db/
 test_empty_db/
 benchmark_dbs/
+benchmarks/dbs/
+tests/fixtures/test_empty_db/
+artifacts/
 
 # Data files
 *.xlsx

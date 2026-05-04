@@ -428,7 +428,7 @@ def main():
     device = "cpu"  # Используем CPU для стабильности
     
     # Базовая директория для баз данных
-    base_db_path = "./benchmark_dbs"
+    base_db_path = "./benchmarks/dbs"
     os.makedirs(base_db_path, exist_ok=True)
     
     # Тестирование всех моделей

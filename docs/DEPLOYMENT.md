@@ -82,8 +82,8 @@ The system uses environment-specific YAML configuration files:
 
 1. **Validate Environment**:
    ```bash
-   chmod +x validate-production.sh
-   ./validate-production.sh
+   chmod +x scripts/deployment/validate-production.sh
+   ./scripts/deployment/validate-production.sh
    ```
 
 2. **Set Required Environment Variables**:
@@ -100,34 +100,34 @@ The system uses environment-specific YAML configuration files:
 
 1. **Deploy to Production**:
    ```bash
-   chmod +x deploy.sh
-   ./deploy.sh production
+   chmod +x scripts/deployment/deploy.sh
+   ./scripts/deployment/deploy.sh production
    ```
 
 2. **Verify Deployment**:
    ```bash
-   ./deploy.sh health
+   ./scripts/deployment/deploy.sh health
    ```
 
 3. **Check Status**:
    ```bash
-   ./deploy.sh status
+   ./scripts/deployment/deploy.sh status
    ```
 
 ### Post-deployment
 
 1. **Set up Monitoring**:
    ```bash
-   chmod +x monitor.sh
+   chmod +x scripts/deployment/monitor.sh
    # Add to crontab for regular monitoring
-   echo "*/5 * * * * /path/to/monitor.sh monitor" | crontab -
+   echo "*/5 * * * * /path/to/scripts/deployment/monitor.sh monitor" | crontab -
    ```
 
 2. **Configure Backup** (if enabled):
    ```bash
    # Backup runs automatically if configured
    # Manual backup can be triggered via the monitoring script
-   ./monitor.sh full
+   ./scripts/deployment/monitor.sh full
    ```
 
 ## Staging Deployment
@@ -139,7 +139,7 @@ export ADMIN_PASSWORD="staging123"
 export SESSION_SECRET_KEY="staging-secret-key"
 export STAGING_DOMAIN="staging.your-domain.com"
 
-./deploy.sh staging
+./scripts/deployment/deploy.sh staging
 ```
 
 ## Development Deployment
@@ -151,7 +151,7 @@ For development with hot reload:
 docker-compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 
 # Or use the deployment script
-./deploy.sh development
+./scripts/deployment/deploy.sh development
 ```
 
 ## Docker Commands Reference
@@ -209,26 +209,26 @@ The system includes comprehensive health monitoring:
 
 ```bash
 # Run health checks
-./monitor.sh monitor
+./scripts/deployment/monitor.sh monitor
 
 # Generate detailed report
-./monitor.sh report
+./scripts/deployment/monitor.sh report
 
 # Clean up old files
-./monitor.sh cleanup
+./scripts/deployment/monitor.sh cleanup
 
 # Restart unhealthy services
-./monitor.sh restart
+./scripts/deployment/monitor.sh restart
 
 # Full monitoring cycle
-./monitor.sh full
+./scripts/deployment/monitor.sh full
 ```
 
 ### Log Management
 
 Logs are stored in the `logs/` directory:
 
-- `batch_processor.log` - Application logs
+- `logs/batch_processor.log` - Application logs
 - `health_report_*.txt` - Health check reports
 - `monitor.log` - Monitoring script logs
 
@@ -299,7 +299,7 @@ docker stats
 docker-compose up -d --scale worker=1
 
 # Clean up old files
-./monitor.sh cleanup
+./scripts/deployment/monitor.sh cleanup
 ```
 
 #### Redis Connection Issues
@@ -439,8 +439,8 @@ server {
 For issues and questions:
 
 1. Check the logs first: `docker-compose logs`
-2. Run health checks: `./monitor.sh monitor`
-3. Validate configuration: `./validate-production.sh`
+2. Run health checks: `./scripts/deployment/monitor.sh monitor`
+3. Validate configuration: `./scripts/deployment/validate-production.sh`
 4. Review this deployment guide
 5. Check the main README.md for application-specific information
 

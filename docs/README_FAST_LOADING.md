@@ -104,8 +104,8 @@ python services/optimized_loader.py benchmark data.xlsx
 ## Документация
 
 - 📖 **[URL_LOADING_SOLUTION.md](URL_LOADING_SOLUTION.md)** - Полное описание решения для URL
-- 📖 **[docs/FAST_URL_LOADING.md](docs/FAST_URL_LOADING.md)** - Подробная документация URL загрузки
-- 📖 **[docs/PERFORMANCE_OPTIMIZATION.md](docs/PERFORMANCE_OPTIMIZATION.md)** - Общие рекомендации по оптимизации
+- 📖 **[docs/FAST_URL_LOADING.md](FAST_URL_LOADING.md)** - Подробная документация URL загрузки
+- 📖 **[docs/PERFORMANCE_OPTIMIZATION.md](PERFORMANCE_OPTIMIZATION.md)** - Общие рекомендации по оптимизации
 - 📖 **[QUICK_START_FAST_LOADING.md](QUICK_START_FAST_LOADING.md)** - Краткая шпаргалка
 
 ## Требования

@@ -20,7 +20,7 @@ python load_tnved.py xlsx/tnved_full10_new.xlsx
 python load_tnved.py products.xlsx --source-type product --source-name customs_2024_q1
 
 # Загрузить URL маппинги (если используете URL подбор)
-python load_urls_fast.py import_26-01.xlsx --source-name import_26-01
+python load_urls_fast.py xlsx/import_26-01.xlsx --source-name import_26-01
 
 # Проверить, что данные загружены
 python search_tnved.py "кофе"
@@ -200,7 +200,7 @@ python load_tnved.py xlsx/tnved_full10_new.xlsx
 
 ```bash
 # Загрузите URL маппинги
-python load_urls_fast.py import_26-01.xlsx --source-name import_26-01
+python load_urls_fast.py xlsx/import_26-01.xlsx --source-name import_26-01
 ```
 
 ### Колонка не найдена

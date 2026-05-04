@@ -34,14 +34,14 @@ FROM python:3.11-windowsservercore-ltsc2019
 & "C:\Program Files\Docker\Docker\DockerCli.exe" -SwitchLinuxEngine
 
 # Использовать обычный Dockerfile
-.\deploy.ps1 production -ContainerMode linux
+.\scripts\deployment\deploy.ps1 production -ContainerMode linux
 ```
 
 ### Решение 3: Использовать гибридный режим
 
 ```powershell
 # Использовать Linux-контейнеры на Windows (рекомендуется)
-.\deploy.ps1 production -ContainerMode hybrid
+.\scripts\deployment\deploy.ps1 production -ContainerMode hybrid
 ```
 
 ### Решение 4: Настройка DNS для Windows-контейнеров
@@ -166,13 +166,13 @@ RUN powershell -Command \
 ```powershell
 # Быстрое решение - переключиться на Linux-контейнеры
 & "C:\Program Files\Docker\Docker\DockerCli.exe" -SwitchLinuxEngine
-.\deploy.ps1 production -ContainerMode linux
+.\scripts\deployment\deploy.ps1 production -ContainerMode linux
 
 # Альтернатива - гибридный режим
-.\deploy.ps1 production -ContainerMode hybrid
+.\scripts\deployment\deploy.ps1 production -ContainerMode hybrid
 
 # Если нужны именно Windows-контейнеры
-.\deploy.ps1 production -ContainerMode windows
+.\scripts\deployment\deploy.ps1 production -ContainerMode windows
 ```
 
 ## Файлы для разных сценариев

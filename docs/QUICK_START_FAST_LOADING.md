@@ -147,8 +147,8 @@ python load_tnved.py data.xlsx --device cuda --batch-size 200
 
 ## 📚 Документация
 
-- **URL загрузка**: [docs/FAST_URL_LOADING.md](docs/FAST_URL_LOADING.md)
-- **Общая оптимизация**: [docs/PERFORMANCE_OPTIMIZATION.md](docs/PERFORMANCE_OPTIMIZATION.md)
+- **URL загрузка**: [docs/FAST_URL_LOADING.md](FAST_URL_LOADING.md)
+- **Общая оптимизация**: [docs/PERFORMANCE_OPTIMIZATION.md](PERFORMANCE_OPTIMIZATION.md)
 - **Оптимизированные загрузчики**: [services/optimized_loader.py](services/optimized_loader.py)
 
 ---

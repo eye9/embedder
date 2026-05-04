@@ -138,17 +138,17 @@ LOG_LEVEL=info
 #### Команды для staging:
 ```bash
 # Используйте скрипт деплоя
-chmod +x deploy.sh
-./deploy.sh staging
+chmod +x scripts/deployment/deploy.sh
+./scripts/deployment/deploy.sh staging
 
 # Или вручную:
 docker-compose --env-file .env.staging up -d --build
 
 # Проверка статуса
-./deploy.sh status
+./scripts/deployment/deploy.sh status
 
 # Проверка здоровья сервисов
-./deploy.sh health
+./scripts/deployment/deploy.sh health
 ```
 
 ### 3. Production (Продакшн)
@@ -211,7 +211,7 @@ export SESSION_SECRET_KEY="your_very_long_secret_key"
 export REDIS_PASSWORD="your_redis_password"
 
 # Запуск деплоя
-./deploy.sh production
+./scripts/deployment/deploy.sh production
 
 # Или вручную с проверками:
 docker-compose --env-file .env.production up -d --build
@@ -392,7 +392,7 @@ docker-compose down
 docker-compose up -d --build
 
 # Проверка здоровья после обновления
-./deploy.sh health
+./scripts/deployment/deploy.sh health
 ```
 
 ### Обновление конфигурации

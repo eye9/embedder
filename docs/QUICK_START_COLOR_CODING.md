@@ -63,8 +63,8 @@ test_color_coding_output.xlsx
 
 ## 📚 Документация
 
-- [Краткое руководство (RU)](docs/ЦВЕТОВАЯ_ИНДИКАЦИЯ.md)
-- [Полное руководство (EN)](docs/COLOR_CODING_GUIDE.md)
+- [Краткое руководство (RU)](ЦВЕТОВАЯ_ИНДИКАЦИЯ.md)
+- [Полное руководство (EN)](COLOR_CODING_GUIDE.md)
 - [Техническая документация](COLOR_CODING_IMPLEMENTATION.md)
 
 ## ❓ Вопросы?

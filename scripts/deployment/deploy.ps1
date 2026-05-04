@@ -435,7 +435,7 @@ switch ($Environment) {
         Remove-OldImages
     }
     default {
-        Write-Host "Usage: .\deploy.ps1 {production|staging|development|health|status|cleanup} [-ContainerMode {linux|windows|auto}]"
+        Write-Host "Usage: .\scripts\deployment\deploy.ps1 {production|staging|development|health|status|cleanup} [-ContainerMode {linux|windows|auto}]"
         Write-Host ""
         Write-Host "Commands:"
         Write-Host "  production   - Deploy to production environment"

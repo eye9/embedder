@@ -20,13 +20,13 @@ docker-compose down
 
 **Windows:**
 ```cmd
-restart-dev.bat
+scripts\deployment\restart-dev.bat
 ```
 
 **Linux/Mac:**
 ```bash
-chmod +x restart-dev.sh
-./restart-dev.sh
+chmod +x scripts/deployment/restart-dev.sh
+./scripts/deployment/restart-dev.sh
 ```
 
 **Или вручную:**
@@ -39,13 +39,13 @@ docker-compose -f docker-compose.yml -f docker-compose.dev.yml restart worker
 
 **Windows:**
 ```cmd
-VERIFY_DOCKER_FIX.bat
+scripts\deployment\VERIFY_DOCKER_FIX.bat
 ```
 
 **Linux/Mac:**
 ```bash
-chmod +x VERIFY_DOCKER_FIX.sh
-./VERIFY_DOCKER_FIX.sh
+chmod +x scripts/deployment/VERIFY_DOCKER_FIX.sh
+./scripts/deployment/VERIFY_DOCKER_FIX.sh
 ```
 
 ---
@@ -288,8 +288,8 @@ docker-compose up -d --build
 1. **Для разработки:** Всегда используйте `docker-compose.dev.yml`
 2. **После изменений в worker:** Перезапускайте worker
 3. **Проверяйте логи:** Они покажут, применяется ли раскрашивание
-4. **Используйте скрипты:** `restart-dev.bat` / `restart-dev.sh` для быстрого перезапуска
-5. **Проверяйте исправление:** `VERIFY_DOCKER_FIX.bat` / `VERIFY_DOCKER_FIX.sh`
+4. **Используйте скрипты:** `scripts\deployment\restart-dev.bat` / `scripts/deployment/restart-dev.sh` для быстрого перезапуска
+5. **Проверяйте исправление:** `scripts\deployment\VERIFY_DOCKER_FIX.bat` / `scripts/deployment/VERIFY_DOCKER_FIX.sh`
 
 ---
 

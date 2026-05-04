@@ -56,7 +56,7 @@ Applied color coding to X cells
 ## Тестовые файлы
 
 - `test_real_color_coding.py` - локальный тест
-- `verify_colors.py` - проверка цветов в файле
+- `tools/debug/verify_colors.py` - проверка цветов в файле
 - `test_web_color_coding.xlsx` - тестовый файл для веб-интерфейса
 
 ## Контакты для отладки

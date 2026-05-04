@@ -289,4 +289,4 @@ elseif ($Type -eq "Engine") {
 }
 
 Write-Host "4. Проверьте установку: docker --version" -ForegroundColor Cyan
-Write-Host "5. Запустите развертывание: .\deploy.ps1 production" -ForegroundColor Cyan
+Write-Host "5. Запустите развертывание: .\scripts\deployment\deploy.ps1 production" -ForegroundColor Cyan

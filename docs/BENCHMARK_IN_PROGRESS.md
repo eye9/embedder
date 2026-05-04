@@ -47,7 +47,7 @@
 Проверить прогресс можно командой:
 ```bash
 # В PowerShell
-Get-Content benchmark_dbs\benchmark_frida\chroma.sqlite3 -ErrorAction SilentlyContinue
+Get-Content benchmarks\dbs\benchmark_frida\chroma.sqlite3 -ErrorAction SilentlyContinue
 ```
 
 Или просто подождите - скрипт сам выведет итоговый отчет!

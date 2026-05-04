@@ -16,12 +16,13 @@ from batch_processor.web.app import app
 
 def setup_logging():
     """Configure logging for the application."""
+    Path("logs").mkdir(exist_ok=True)
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[
             logging.StreamHandler(),
-            logging.FileHandler('batch_processor.log')
+            logging.FileHandler('logs/batch_processor.log')
         ]
     )
 

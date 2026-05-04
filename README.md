@@ -3,8 +3,28 @@
 Система для автоматического подбора кодов ТНВЭД (Товарная номенклатура внешнеэкономической деятельности) на основе текстового описания товара с использованием векторного поиска.
 
 ## Документация по работе
-[Quick Cli](QUICK_CLI_GUIDE.md)
-[Load Description](CLI_BATCH_PROCESSING.md)
+[Quick Cli](docs/QUICK_CLI_GUIDE.md)
+[Load Description](docs/CLI_BATCH_PROCESSING.md)
+
+## Основные команды
+```bash
+# Загрузить справочные данные ТНВЭД
+python load_tnved.py xlsx/tnved_full10_new.xlsx
+
+# Загрузить товарные данные с уже подобранными кодами
+python load_tnved.py ../2026/26m3.xlsx --source-type product --source-name 2026m3 --config config.yaml
+
+# Загрузить URL маппинги (если используете URL подбор)
+python load_urls_fast.py import_26-01.xlsx --source-name import_26-01
+
+# Подбор кодов
+python batch_process_cli.py input.xlsx output.xlsx
+
+# Интерактивный режим
+python search_tnved.py --interactive
+
+```
+
 
 ## Новые возможности: Поддержка товарных данных
 
@@ -37,7 +57,7 @@
 - `search_document:` - для индексации описаний товаров в базе данных
 - `search_query:` - для поисковых запросов пользователей
 
-Использование правильных префиксов улучшает точность поиска на **20-50%** за счет лучшего разделения релевантных и нерелевантных результатов. Подробнее см. `FRIDA_PREFIX_USAGE.md`.
+Использование правильных префиксов улучшает точность поиска на **20-50%** за счет лучшего разделения релевантных и нерелевантных результатов. Подробнее см. `docs/FRIDA_PREFIX_USAGE.md`.
 
 ## Структура проекта
 
@@ -127,7 +147,7 @@ product:{code}:{source_name}:{excel_row_number}
 Например: `product:0901110000:customs_2024_q1:2`. Код ТНВЭД хранится в
 metadata как `code`; бизнес-логика и поиск не должны извлекать код из ID.
 
-**Пример файла:** См. `example_product_data.csv` для примера формата данных.
+**Пример файла:** См. `examples/example_product_data.csv` для примера формата данных.
 
 ## Установка
 
@@ -168,7 +188,7 @@ processing:
   batch_size: 32  # Уменьшить для GPU с малой памятью
 ```
 
-**⚠️ Важно:** Для GPU с 3GB памяти (например, GTX 1060) рекомендуется использовать CPU из-за ограничений памяти. См. `CUDA_SETUP_RU.md` для деталей.
+**⚠️ Важно:** Для GPU с 3GB памяти (например, GTX 1060) рекомендуется использовать CPU из-за ограничений памяти. См. `docs/CUDA_SETUP_RU.md` для деталей.
 
 ## Конфигурация
 
@@ -207,7 +227,7 @@ sources:
 
 logging:
   level: "INFO"
-  file: "tnved_embedder.log"
+  file: "logs/tnved_embedder.log"
 ```
 
 ### Переменные окружения
@@ -489,7 +509,7 @@ from utils.logger import setup_logging, get_logger
 # Настройка логирования
 setup_logging(
     level="INFO",
-    log_file="tnved_embedder.log"
+    log_file="logs/tnved_embedder.log"
 )
 
 # Получение логгера

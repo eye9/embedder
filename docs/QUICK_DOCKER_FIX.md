@@ -25,13 +25,13 @@ docker-compose -f docker-compose.yml -f docker-compose.dev.yml restart worker
 
 ### Windows:
 ```cmd
-restart-dev.bat
+scripts\deployment\restart-dev.bat
 ```
 
 ### Linux/Mac:
 ```bash
-chmod +x restart-dev.sh
-./restart-dev.sh
+chmod +x scripts/deployment/restart-dev.sh
+./scripts/deployment/restart-dev.sh
 ```
 
 ## Проверка

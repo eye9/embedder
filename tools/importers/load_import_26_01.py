@@ -6,17 +6,23 @@
 
 import pandas as pd
 import chromadb
+import sys
 from chromadb.config import Settings
-from services.url_database_manager_optimized import OptimizedURLDatabaseManager
-from utils.config import Config
 import logging
 import time
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from services.url_database_manager_optimized import OptimizedURLDatabaseManager
+from utils.config import Config
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 
-def load_import_data(excel_file: str = "import_26-01.xlsx"):
+def load_import_data(excel_file: str = str(PROJECT_ROOT / "xlsx" / "import_26-01.xlsx")):
     """
     Загружает данные из Excel файла в базу данных URL.
     Дедупликация по описанию и коду.
@@ -27,8 +33,9 @@ def load_import_data(excel_file: str = "import_26-01.xlsx"):
     start_time = time.time()
     
     # Загрузка конфигурации
-    logger.info("Загрузка конфигурации из config.yaml")
-    config = Config.from_file('config.yaml')
+    config_path = PROJECT_ROOT / "config.yaml"
+    logger.info(f"Загрузка конфигурации из {config_path}")
+    config = Config.from_file(str(config_path))
     
     # Получение настроек
     db_path = config.database.path

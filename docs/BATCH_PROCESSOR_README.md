@@ -84,7 +84,7 @@ The system automatically applies color coding to TNVED_Code cells based on confi
 - **🔴 Red** (`Score < 0.185`): Low confidence - manual review recommended  
 - **⚪ White** (`Score = 1.0`): URL match - highest reliability
 
-See [Color Coding Guide](docs/COLOR_CODING_GUIDE.md) for details.
+See [Color Coding Guide](COLOR_CODING_GUIDE.md) for details.
 
 ## Processing Modes
 
@@ -133,7 +133,7 @@ mypy batch_processor/
 
 ## Monitoring
 
-- **Logs**: Application logs in `batch_processor.log`
+- **Logs**: Application logs in `logs/batch_processor.log`
 - **Health Checks**: Built-in health check endpoints
 - **Metrics**: Processing statistics and performance data
 

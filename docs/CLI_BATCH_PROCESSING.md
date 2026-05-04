@@ -361,7 +361,7 @@ search:
 
 logging:
   level: "INFO"
-  file: "batch_processor.log"
+  file: "logs/batch_processor.log"
 ```
 
 ### Переменные окружения

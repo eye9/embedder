@@ -151,4 +151,4 @@ processing:
 Если возникнут проблемы, проверьте:
 - `python -c "import torch; print(torch.__version__)"` - должна быть версия с `+cu121` или `+cu118`
 - `nvidia-smi` - GPU должен быть виден
-- Логи в `tnved_embedder.log` - там будут детали ошибок
+- Логи в `logs/tnved_embedder.log` - там будут детали ошибок

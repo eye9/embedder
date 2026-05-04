@@ -28,7 +28,7 @@ docker info --format "{{.OSType}}"
 #### Запуск с Linux-контейнерами:
 ```powershell
 # Использовать обычный docker-compose.yml
-.\deploy.ps1 production -ContainerMode linux
+.\scripts\deployment\deploy.ps1 production -ContainerMode linux
 ```
 
 ### Решение 2: Использовать Windows-контейнеры
@@ -45,14 +45,14 @@ docker info --format "{{.OSType}}"
 #### Запуск с Windows-контейнерами:
 ```powershell
 # Использовать специальный docker-compose.windows.yml
-.\deploy.ps1 production -ContainerMode windows
+.\scripts\deployment\deploy.ps1 production -ContainerMode windows
 ```
 
 ### Решение 3: Автоматическое определение режима
 
 ```powershell
 # Скрипт автоматически определит текущий режим Docker
-.\deploy.ps1 production -ContainerMode auto
+.\scripts\deployment\deploy.ps1 production -ContainerMode auto
 ```
 
 ## Требования для Windows-контейнеров
@@ -125,19 +125,19 @@ docker run --rm mcr.microsoft.com/windows/servercore:ltsc2019 cmd /c echo "Windo
 
 ```powershell
 # Linux-контейнеры (рекомендуется)
-.\deploy.ps1 production -ContainerMode linux
+.\scripts\deployment\deploy.ps1 production -ContainerMode linux
 
 # Windows-контейнеры
-.\deploy.ps1 production -ContainerMode windows
+.\scripts\deployment\deploy.ps1 production -ContainerMode windows
 
 # Автоопределение
-.\deploy.ps1 production -ContainerMode auto
+.\scripts\deployment\deploy.ps1 production -ContainerMode auto
 
 # Проверка состояния
-.\deploy.ps1 status
+.\scripts\deployment\deploy.ps1 status
 
 # Проверка здоровья
-.\deploy.ps1 health
+.\scripts\deployment\deploy.ps1 health
 ```
 
 ## Устранение неполадок

@@ -14,7 +14,7 @@
 
 ```bash
 python test_real_color_coding.py
-python verify_colors.py
+python tools/debug/verify_colors.py
 ```
 
 Результат:
@@ -106,7 +106,7 @@ Applied color coding to X cells
 Используйте скрипт для проверки цветов в результирующем файле:
 
 ```bash
-python verify_colors.py
+python tools/debug/verify_colors.py
 ```
 
 Замените имя файла в скрипте на имя вашего результирующего файла.

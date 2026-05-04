@@ -51,10 +51,10 @@ TEST_QUERIES = {
 
 
 MODELS = [
-    ("FRIDA", "ai-forever/FRIDA", "./benchmark_dbs/benchmark_frida"),
-    ("E5-Small", "intfloat/multilingual-e5-small", "./benchmark_dbs/benchmark_e5_small"),
-    ("MiniLM-L12", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2", "./benchmark_dbs/benchmark_miniLM_l12"),
-    ("RuBERT-Tiny2", "cointegrated/rubert-tiny2", "./benchmark_dbs/benchmark_rubert_tiny2"),
+    ("FRIDA", "ai-forever/FRIDA", "./benchmarks/dbs/benchmark_frida"),
+    ("E5-Small", "intfloat/multilingual-e5-small", "./benchmarks/dbs/benchmark_e5_small"),
+    ("MiniLM-L12", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2", "./benchmarks/dbs/benchmark_minilm_l12"),
+    ("RuBERT-Tiny2", "cointegrated/rubert-tiny2", "./benchmarks/dbs/benchmark_rubert_tiny2"),
 ]
 
 

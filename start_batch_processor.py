@@ -19,12 +19,13 @@ from batch_processor.config.loader import get_config_loader
 
 def setup_logging(log_level: str = "INFO"):
     """Set up logging configuration."""
+    Path("logs").mkdir(exist_ok=True)
     logging.basicConfig(
         level=getattr(logging, log_level.upper()),
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[
             logging.StreamHandler(sys.stdout),
-            logging.FileHandler('batch_processor.log')
+            logging.FileHandler('logs/batch_processor.log')
         ]
     )
 

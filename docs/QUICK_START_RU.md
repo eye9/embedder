@@ -179,7 +179,7 @@ python search_tnved.py "кофе" --quiet
 ## Поддержка
 
 При возникновении проблем проверьте:
-1. Логи в `tnved_embedder.log`
+1. Логи в `logs/tnved_embedder.log`
 2. Версию PyTorch: `python -c "import torch; print(torch.__version__)"`
 3. Доступность CUDA: `python -c "import torch; print(torch.cuda.is_available())"`
 4. Память GPU: `nvidia-smi`

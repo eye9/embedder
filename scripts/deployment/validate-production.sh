@@ -269,7 +269,7 @@ check_monitoring() {
     fi
     
     # Check monitoring scripts
-    if [ -f "monitor.sh" ]; then
+    if [ -f "scripts/deployment/monitor.sh" ]; then
         pass "Monitoring script exists"
     else
         warn "Monitoring script should be available for production"
@@ -295,11 +295,11 @@ check_backup_configuration() {
     fi
     
     # Check deployment script
-    if [ -f "deploy.sh" ]; then
+    if [ -f "scripts/deployment/deploy.sh" ]; then
         pass "Deployment script exists"
         
         # Check if it includes backup functionality
-        if grep -q "backup" deploy.sh 2>/dev/null; then
+        if grep -q "backup" scripts/deployment/deploy.sh 2>/dev/null; then
             pass "Deployment script includes backup functionality"
         else
             warn "Deployment script should include backup functionality"

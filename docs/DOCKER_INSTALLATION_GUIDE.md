@@ -281,8 +281,8 @@ elseif ($WSL2) {
     Write-Host "WSL2 установлен. Требуется перезагрузка."
 }
 else {
-    Write-Host "Использование: .\install-docker.ps1 -Desktop|-Engine|-WSL2"
+    Write-Host "Использование: .\scripts\deployment\install-docker.ps1 -Desktop|-Engine|-WSL2"
 }
 ```
 
-Сохраните этот скрипт как `install-docker.ps1` и запустите с нужным параметром.
+Сохраните этот скрипт как `scripts\deployment\install-docker.ps1` и запустите с нужным параметром.

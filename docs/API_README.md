@@ -383,7 +383,7 @@ When authentication is disabled, access interactive documentation:
 Check logs for detailed error information:
 
 ```bash
-tail -f tnved_embedder.log
+tail -f logs/tnved_embedder.log
 ```
 
 ## Support

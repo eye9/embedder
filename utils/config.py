@@ -49,7 +49,7 @@ class LoggingConfig:
     """Logging configuration"""
     level: str = "INFO"
     format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    file: str = "tnved_embedder.log"
+    file: str = "logs/tnved_embedder.log"
 
 
 @dataclass

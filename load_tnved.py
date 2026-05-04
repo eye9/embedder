@@ -171,7 +171,7 @@ Examples:
         "--log-file",
         type=str,
         default=None,
-        help="Path to log file (default: tnved_embedder.log)"
+        help="Path to log file (default: logs/tnved_embedder.log)"
     )
     
     return parser.parse_args()

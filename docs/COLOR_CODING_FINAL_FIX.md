@@ -41,7 +41,7 @@ for result in results:
 
 ```bash
 python test_real_color_coding.py
-python verify_colors.py
+python tools/debug/verify_colors.py
 ```
 
 **Результат:**
