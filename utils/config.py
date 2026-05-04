@@ -286,6 +286,8 @@ class Config:
             proc_data = data["processing"]
             if "batch_size" in proc_data:
                 config.processing.batch_size = proc_data["batch_size"]
+            elif "chunk_size" in proc_data:
+                config.processing.batch_size = proc_data["chunk_size"]
         
         # Search configuration
         if "search" in data:
