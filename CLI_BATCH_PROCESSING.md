@@ -58,9 +58,23 @@ python load_tnved.py products.xlsx \
     --source-type product \
     --source-name "customs_2024_q1" \
     --config config.yaml
+
+# Повторная загрузка того же source_name с заменой старого набора
+python load_tnved.py products.xlsx \
+    --source-type product \
+    --source-name "customs_2024_q1" \
+    --replace-source \
+    --config config.yaml
+
 # Загрузка товарных данных 1 строка
 python load_tnved.py ../2026/26m1.xlsx --source-type product --source-name "2026m1" --config config.yaml
 ```
+
+Для product-загрузки `source_name` считается именем набора данных. Если такой
+источник уже есть, CLI запросит подтверждение на замену; в автоматических
+скриптах указывайте `--replace-source`. Записи в ChromaDB получают технический
+ID вида `product:{code}:{source_name}:{excel_row_number}`, а код ТНВЭД хранится
+в metadata как `code`.
 
 #### 2. Поиск кодов для одного товара
 
@@ -438,6 +452,16 @@ python load_tnved.py tnved_full10_new.xlsx --config config.yaml
 ```yaml
 processing:
   batch_size: 50  # Уменьшить с 100
+```
+
+### Проблема: Product source уже существует
+
+**Решение:** Проверьте, что `--source-name` действительно относится к тому же
+набору данных. Для интерактивного запуска подтвердите замену в CLI; для
+неинтерактивного запуска добавьте `--replace-source`.
+
+```bash
+python load_tnved.py products.xlsx --source-type product --source-name "2026m1" --replace-source --config config.yaml
 ```
 
 ## Рекомендации

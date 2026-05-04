@@ -200,6 +200,60 @@ def test_to_search_results(chroma_manager):
     assert search_results[0].code in ["0901110000", "0901120000"]
 
 
+def test_to_search_results_uses_metadata_code_for_product_ids(chroma_manager):
+    """Test product search results expose business code, not technical ID."""
+    ids = ["product:9505900000:2026m3:45123"]
+    embeddings = [[1.0, 0.0, 0.0]]
+    metadatas = [{
+        "description": "Party decorations",
+        "code": "9505900000",
+        "source_name": "2026m3",
+    }]
+    documents = ["party decorations"]
+
+    chroma_manager.add_batch(ids, embeddings, metadatas, documents, source_type="product")
+
+    query_results = chroma_manager.query([1.0, 0.0, 0.0], n_results=1)
+    search_results = chroma_manager.to_search_results(query_results)
+
+    assert search_results[0].code == "9505900000"
+    assert search_results[0].source_name == "2026m3"
+
+
+def test_count_and_delete_product_records_by_source(chroma_manager):
+    """Test source deletion is scoped to product records for that source."""
+    chroma_manager.add_batch(
+        ids=[
+            "product:0901110000:test_source:2",
+            "product:0901120000:other_source:2",
+        ],
+        embeddings=[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+        metadatas=[
+            {"description": "Coffee product", "code": "0901110000", "source_name": "test_source"},
+            {"description": "Other product", "code": "0901120000", "source_name": "other_source"},
+        ],
+        documents=["coffee product", "other product"],
+        source_type="product"
+    )
+    chroma_manager.add_batch(
+        ids=["0901110000"],
+        embeddings=[[0.0, 0.0, 1.0]],
+        metadatas=[{"description": "Reference coffee", "code": "0901110000", "source_name": "test_source"}],
+        documents=["reference coffee"],
+        source_type="reference"
+    )
+
+    assert chroma_manager.count_product_records_by_source("test_source") == 1
+
+    deleted = chroma_manager.delete_product_records_by_source("test_source")
+
+    assert deleted == 1
+    assert chroma_manager.count_product_records_by_source("test_source") == 0
+    assert chroma_manager.count_product_records_by_source("other_source") == 1
+    assert chroma_manager.get_by_code("0901110000") is not None
+    assert chroma_manager.count() == 2
+
+
 def test_reset(chroma_manager):
     """Test resetting the collection"""
     # Add some data

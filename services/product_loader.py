@@ -10,9 +10,7 @@ from pathlib import Path
 from typing import Optional, Dict
 
 import pandas as pd
-import numpy as np
 
-from models.product_record import ProductRecord
 from services.text_normalizer import TextNormalizer
 from services.embedding_generator import EmbeddingGenerator
 from services.chroma_manager import ChromaDBManager
@@ -25,6 +23,18 @@ logger = logging.getLogger(__name__)
 class DataLoadError(Exception):
     """Raised when data loading fails"""
     pass
+
+
+class SourceAlreadyExistsError(DataLoadError):
+    """Raised when loading would replace an existing product source without confirmation"""
+
+    def __init__(self, source_name: str, existing_count: int):
+        self.source_name = source_name
+        self.existing_count = existing_count
+        super().__init__(
+            f"Product source '{source_name}' already has {existing_count} records. "
+            "Pass replace_existing=True to replace it."
+        )
 
 
 class ProductLoader:
@@ -93,7 +103,8 @@ class ProductLoader:
         self,
         file_path: str,
         source_name: str,
-        source_type: str = "product"
+        source_type: str = "product",
+        replace_existing: bool = False
     ) -> int:
         """
         Load product data from Excel file into ChromaDB.
@@ -106,12 +117,14 @@ class ProductLoader:
             file_path: Path to Excel file containing product data
             source_name: Name of the source (e.g., "customs_2024_q1")
             source_type: Type of source (default: "product")
+            replace_existing: Replace existing product records with the same source_name
             
         Returns:
             Total number of records successfully loaded
             
         Raises:
             DataLoadError: If file cannot be read or required columns are missing
+            SourceAlreadyExistsError: If source_name already exists and replace_existing is False
             FileNotFoundError: If file doesn't exist
             ValueError: If source_name is empty
             
@@ -123,6 +136,7 @@ class ProductLoader:
         # Validate inputs
         if not source_name or not source_name.strip():
             raise ValueError("source_name cannot be empty")
+        source_name = source_name.strip()
         
         # Validate file exists
         file_path_obj = Path(file_path)
@@ -156,7 +170,8 @@ class ProductLoader:
         
         # Filter out rows with missing Code or TextEx
         initial_count = len(df)
-        df = df.dropna(subset=["Code", "TextEx"])
+        df = df.dropna(subset=["Code", "TextEx"]).copy()
+        df["_excel_row_number"] = df.index + 2
         filtered_count = len(df)
         
         if filtered_count < initial_count:
@@ -177,13 +192,13 @@ class ProductLoader:
         invalid_codes = []
         normalized_codes = []
         
-        for idx, code in enumerate(df["Code"]):
+        for row_idx, code in zip(df["_excel_row_number"], df["Code"]):
             try:
                 normalized_code = validate_tnved_code(code, strict=False)
                 normalized_codes.append(normalized_code)
             except (TNVEDValidationError, ValueError) as e:
-                logger.warning(f"Invalid ТНВЭД code at row {idx + 1}: '{code}' - {e}")
-                invalid_codes.append((idx, code, str(e)))
+                logger.warning(f"Invalid ТНВЭД code at row {row_idx}: '{code}' - {e}")
+                invalid_codes.append((row_idx, code, str(e)))
                 # Use the original code padded to 10 digits as fallback
                 normalized_codes.append(str(code).zfill(10))
         
@@ -192,14 +207,25 @@ class ProductLoader:
         if invalid_codes:
             logger.warning(f"Found {len(invalid_codes)} invalid ТНВЭД codes (using fallback normalization)")
             # Log first few invalid codes for debugging
-            for idx, code, error in invalid_codes[:5]:
-                logger.debug(f"Row {idx + 1}: '{code}' - {error}")
+            for row_idx, code, error in invalid_codes[:5]:
+                logger.debug(f"Row {row_idx}: '{code}' - {error}")
         
         logger.info(f"Normalized {len(df)} codes to 10-digit format")
+
+        existing_source_count = self.count_product_records_by_source(source_name)
+        if existing_source_count > 0:
+            if not replace_existing:
+                raise SourceAlreadyExistsError(source_name, existing_source_count)
+
+            deleted_count = self.db_manager.delete_product_records_by_source(source_name)
+            logger.info(
+                f"Replacing product source {source_name}: deleted {deleted_count} existing records"
+            )
         
         # Process data in batches
         total_processed = 0
         total_batches = (len(df) + self.batch_size - 1) // self.batch_size
+        failed_batches = 0
         
         logger.info(f"Processing {len(df)} product records in {total_batches} batches")
         
@@ -214,6 +240,7 @@ class ProductLoader:
                 total_processed += processed
                 
             except Exception as e:
+                failed_batches += 1
                 logger.error(
                     f"Error processing batch {batch_num + 1}/{total_batches}: {e}",
                     exc_info=True
@@ -221,12 +248,33 @@ class ProductLoader:
                 # Continue with next batch instead of failing completely
                 continue
         
-        logger.info(
-            f"Successfully loaded {total_processed} product records from {file_path} "
-            f"with source_name: {source_name}"
-        )
+        if failed_batches:
+            logger.warning(
+                f"Partially loaded {total_processed}/{len(df)} product records from {file_path} "
+                f"with source_name: {source_name}; failed_batches={failed_batches}/{total_batches}"
+            )
+        else:
+            logger.info(
+                f"Successfully loaded {total_processed} product records from {file_path} "
+                f"with source_name: {source_name}"
+            )
         
         return total_processed
+
+    @staticmethod
+    def _generate_product_id(code: str, source_name: str, excel_row_number: int) -> str:
+        """
+        Generate a stable technical ID for a product row.
+
+        Args:
+            code: Normalized ТНВЭД code
+            source_name: Product data source name
+            excel_row_number: Original row number in Excel
+
+        Returns:
+            ChromaDB record ID
+        """
+        return f"product:{code}:{source_name.strip()}:{int(excel_row_number)}"
     
     def _process_batch(
         self,
@@ -258,50 +306,12 @@ class ProductLoader:
         # Extract codes and descriptions
         codes = batch_df["Code"].tolist()
         descriptions = batch_df["TextEx"].tolist()
+        excel_row_numbers = batch_df["_excel_row_number"].tolist()
         
-        # Generate unique IDs for each record (handles duplicates)
-        unique_ids = []
-        code_counters = {}  # Track counters for codes within this batch
-        
-        for code in codes:
-            # Check if we've seen this code in this batch
-            if code in code_counters:
-                # Use counter for this batch
-                code_counters[code] += 1
-                unique_id = f"{code}_{code_counters[code]:03d}"
-            else:
-                # First occurrence in batch, check database
-                existing_record = self.db_manager.get_by_code(code)
-                if existing_record is None:
-                    # No existing record, use code as ID
-                    unique_id = code
-                    code_counters[code] = 0  # Mark as seen
-                else:
-                    # Find next available counter starting from database
-                    counter = 1
-                    while True:
-                        candidate_id = f"{code}_{counter:03d}"
-                        try:
-                            result = self.db_manager.collection.get(
-                                ids=[candidate_id],
-                                include=["metadatas"]
-                            )
-                            if len(result["ids"]) == 0:
-                                # ID is available
-                                unique_id = candidate_id
-                                code_counters[code] = counter  # Track for batch
-                                break
-                            counter += 1
-                            
-                            # Safety check to prevent infinite loop
-                            if counter > 9999:
-                                raise ValueError(f"Too many records for code {code}, cannot generate unique ID")
-                                
-                        except Exception as e:
-                            logger.error(f"Error checking ID {candidate_id}: {e}")
-                            raise
-            
-            unique_ids.append(unique_id)
+        unique_ids = [
+            self._generate_product_id(code, source_name, row_number)
+            for code, row_number in zip(codes, excel_row_numbers)
+        ]
         
         logger.debug(f"Generated {len(unique_ids)} unique IDs for product records")
         
@@ -343,21 +353,21 @@ class ProductLoader:
         
         # Create metadata with source information
         metadatas = []
-        for code, desc in zip(codes, descriptions):
+        source_id_columns = ["SourceID", "source_id", "ID", "DeclarationID", "declaration_id"]
+
+        for _, row in batch_df.iterrows():
+            code = row["Code"]
+            desc = row["TextEx"]
             metadata = {
                 "description": desc,
                 "code": code,
-                "source_name": source_name
+                "source_name": source_name,
+                "excel_row_number": int(row["_excel_row_number"])
             }
             
-            # Add source_id if available in the DataFrame
-            # Check for common source ID column names
-            source_id_columns = ["SourceID", "source_id", "ID", "DeclarationID", "declaration_id"]
             for col in source_id_columns:
                 if col in batch_df.columns:
-                    # Get the source_id for this row
-                    row_idx = codes.index(code)  # Find the row index for this code
-                    source_id_value = batch_df.iloc[row_idx][col]
+                    source_id_value = row[col]
                     if pd.notna(source_id_value) and str(source_id_value).strip():
                         metadata["source_id"] = str(source_id_value).strip()
                     break
@@ -403,6 +413,28 @@ class ProductLoader:
             Dictionary with counts for each source type
         """
         return self.db_manager.get_statistics_by_source_type()
+
+    def count_product_records_by_source(self, source_name: str) -> int:
+        """
+        Count product records for a specific source_name.
+
+        Args:
+            source_name: Product data source name
+
+        Returns:
+            Number of matching product records
+        """
+        return self.db_manager.count_product_records_by_source(source_name)
+
+    def reset_database(self) -> None:
+        """
+        Reset the database by deleting all records.
+
+        Warning: This operation cannot be undone!
+        """
+        logger.warning("Resetting database - all records will be deleted")
+        self.db_manager.reset()
+        logger.info("Database reset complete")
     
     def validate_source_information(self, source_name: str, source_id: Optional[str] = None) -> bool:
         """

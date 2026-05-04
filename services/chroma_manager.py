@@ -51,47 +51,6 @@ class ChromaDBManager:
         
         logger.info(f"Collection '{collection_name}' initialized with {self.collection.count()} records")
     
-    def _generate_unique_id(self, code: str) -> str:
-        """
-        Generate unique ID for product records using code + counter pattern
-        
-        For reference records, uses the code directly.
-        For product records, uses format: {code}_{counter}
-        
-        Args:
-            code: ТНВЭД code
-            
-        Returns:
-            Unique ID string
-        """
-        # Check if base code exists
-        existing_record = self.get_by_code(code)
-        if existing_record is None:
-            # No existing record, use code as ID
-            return code
-        
-        # Find next available counter
-        counter = 1
-        while True:
-            candidate_id = f"{code}_{counter:03d}"
-            try:
-                result = self.collection.get(
-                    ids=[candidate_id],
-                    include=["metadatas"]
-                )
-                if len(result["ids"]) == 0:
-                    # ID is available
-                    return candidate_id
-                counter += 1
-                
-                # Safety check to prevent infinite loop
-                if counter > 9999:
-                    raise ValueError(f"Too many records for code {code}, cannot generate unique ID")
-                    
-            except Exception as e:
-                logger.error(f"Error checking ID {candidate_id}: {e}")
-                raise
-
     def add_batch(
         self,
         ids: List[str],
@@ -344,6 +303,77 @@ class ChromaDBManager:
             Number of records
         """
         return self.collection.count()
+
+    @staticmethod
+    def _product_source_where(source_name: str) -> Dict:
+        """
+        Build a ChromaDB filter for product records from a specific source.
+
+        Args:
+            source_name: Product data source name
+
+        Returns:
+            ChromaDB where clause
+        """
+        if not source_name or not source_name.strip():
+            raise ValueError("source_name cannot be empty")
+
+        return {
+            "$and": [
+                {"source_type": "product"},
+                {"source_name": source_name.strip()}
+            ]
+        }
+
+    def count_product_records_by_source(self, source_name: str) -> int:
+        """
+        Count product records for a specific source_name.
+
+        Args:
+            source_name: Product data source name
+
+        Returns:
+            Number of matching product records
+        """
+        try:
+            results = self.collection.get(
+                where=self._product_source_where(source_name),
+                include=["metadatas"]
+            )
+            return len(results["ids"])
+        except Exception as e:
+            logger.error(f"Error counting product records for source {source_name}: {e}")
+            raise
+
+    def delete_product_records_by_source(self, source_name: str) -> int:
+        """
+        Delete product records for a specific source_name.
+
+        Reference records and product records from other sources are preserved.
+
+        Args:
+            source_name: Product data source name
+
+        Returns:
+            Number of deleted records
+        """
+        try:
+            results = self.collection.get(
+                where=self._product_source_where(source_name),
+                include=["metadatas"]
+            )
+            record_ids = results["ids"]
+
+            if not record_ids:
+                logger.info(f"No product records found for source {source_name}")
+                return 0
+
+            self.collection.delete(ids=record_ids)
+            logger.info(f"Deleted {len(record_ids)} product records for source {source_name}")
+            return len(record_ids)
+        except Exception as e:
+            logger.error(f"Error deleting product records for source {source_name}: {e}")
+            raise
     
     def get_statistics_by_source_type(self) -> Dict[str, int]:
         """
@@ -446,10 +476,10 @@ class ChromaDBManager:
             # Clamp to [0, 1] range for safety
             similarity_score = max(0.0, min(1.0, similarity_score))
             
-            metadata = metadatas[i]
+            metadata = metadatas[i] if i < len(metadatas) and metadatas[i] else {}
             
             search_result = SearchResult(
-                code=ids[i],
+                code=metadata.get("code") or ids[i],
                 description=metadata.get("description", ""),
                 normalized_text=documents[i],
                 similarity_score=similarity_score,

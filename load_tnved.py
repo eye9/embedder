@@ -34,8 +34,12 @@ import time
 from pathlib import Path
 
 from services import TextNormalizer, EmbeddingGenerator, TNVEDLoader
-from services.tnved_loader import DataLoadError
-from services.product_loader import ProductLoader
+from services.tnved_loader import DataLoadError as TNVEDDataLoadError
+from services.product_loader import (
+    ProductLoader,
+    DataLoadError as ProductDataLoadError,
+    SourceAlreadyExistsError,
+)
 from utils.config import Config
 from utils.logger import setup_logging, get_logger
 from utils.tnved_validator import validate_tnved_code, TNVEDValidationError
@@ -127,6 +131,12 @@ Examples:
         type=str,
         default=None,
         help="Name of the data source (e.g., 'customs_2024_q1', 'supplier_catalog'). Required when --source-type is 'product'"
+    )
+
+    parser.add_argument(
+        "--replace-source",
+        action="store_true",
+        help="Replace existing product records with the same --source-name without prompting"
     )
     
     # Action options
@@ -233,9 +243,11 @@ def main():
     args = parse_arguments()
     
     # Validate source-name requirement for product loading
-    if args.source_type == "product" and not args.source_name:
-        print("[ERROR] --source-name is required when --source-type is 'product'", file=sys.stderr)
-        sys.exit(1)
+    if args.source_type == "product":
+        if not args.source_name or not args.source_name.strip():
+            print("[ERROR] --source-name is required when --source-type is 'product'", file=sys.stderr)
+            sys.exit(1)
+        args.source_name = args.source_name.strip()
     
     # Load configuration
     config = load_configuration(args)
@@ -381,6 +393,45 @@ def main():
             else:
                 if not args.quiet:
                     print("  (Database is already empty)")
+
+        replace_existing_source = False
+        if args.source_type == "product":
+            existing_source_count = loader.count_product_records_by_source(args.source_name)
+
+            if existing_source_count > 0:
+                logger.warning(
+                    f"Product source {args.source_name} already exists with "
+                    f"{existing_source_count} records"
+                )
+
+                if args.replace_source:
+                    replace_existing_source = True
+                    if not args.quiet:
+                        print(
+                            f"[WARNING] Replacing {existing_source_count} existing "
+                            f"product records for source '{args.source_name}'"
+                        )
+                elif args.quiet:
+                    print(
+                        f"[ERROR] Product source '{args.source_name}' already has "
+                        f"{existing_source_count} records. Use --replace-source to replace it.",
+                        file=sys.stderr
+                    )
+                    sys.exit(1)
+                else:
+                    print(
+                        f"[WARNING] Product source '{args.source_name}' already has "
+                        f"{existing_source_count} records."
+                    )
+                    response = input("Replace existing records for this source? [y/N]: ").strip().lower()
+                    if response not in {"y", "yes"}:
+                        logger.info(f"Load cancelled by user for existing source {args.source_name}")
+                        print("Load cancelled. No data was changed.")
+                        sys.exit(0)
+
+                    replace_existing_source = True
+            elif args.replace_source:
+                replace_existing_source = True
         
         if not args.quiet:
             print()
@@ -394,7 +445,11 @@ def main():
         
         # Load data using appropriate method based on source type
         if args.source_type == "product":
-            total_loaded = loader.load_from_excel(args.excel_file, args.source_name)
+            total_loaded = loader.load_from_excel(
+                args.excel_file,
+                args.source_name,
+                replace_existing=replace_existing_source
+            )
         else:
             total_loaded = loader.load_from_excel(args.excel_file)
         
@@ -431,7 +486,12 @@ def main():
         
         sys.exit(0)
         
-    except DataLoadError as e:
+    except SourceAlreadyExistsError as e:
+        logger.error(f"Product source already exists: {e}")
+        print(f"\n[ERROR] {e}", file=sys.stderr)
+        sys.exit(1)
+
+    except (TNVEDDataLoadError, ProductDataLoadError) as e:
         logger.error(f"Data load error: {e}")
         print(f"\n[ERROR] Data load error: {e}", file=sys.stderr)
         sys.exit(1)

@@ -5,12 +5,24 @@ Tests for ProductLoader service
 import pytest
 import tempfile
 import pandas as pd
+import numpy as np
 from pathlib import Path
 
-from services.product_loader import ProductLoader, DataLoadError
-from services.text_normalizer import TextNormalizer
-from services.embedding_generator import EmbeddingGenerator
-from utils.config import Config
+from services.product_loader import ProductLoader, SourceAlreadyExistsError
+
+
+class DummyNormalizer:
+    """Lightweight normalizer for product loader tests."""
+
+    def normalize(self, text):
+        return str(text).lower()
+
+
+class DummyEmbedder:
+    """Deterministic embedder that avoids loading external ML models in tests."""
+
+    def generate(self, texts, batch_size=100, prefix=""):
+        return np.array([[float(i), 0.0, 0.0] for i, _ in enumerate(texts, start=1)])
 
 
 @pytest.fixture
@@ -37,10 +49,7 @@ def temp_db_path():
 @pytest.fixture
 def product_loader(temp_db_path):
     """Create ProductLoader instance for testing"""
-    config = Config()
-    normalizer = TextNormalizer()
-    embedder = EmbeddingGenerator(config.model.name, config.model.device)
-    loader = ProductLoader(temp_db_path, normalizer, embedder, batch_size=10)
+    loader = ProductLoader(temp_db_path, DummyNormalizer(), DummyEmbedder(), batch_size=10)
     yield loader
     # Ensure proper cleanup
     if hasattr(loader, 'db_manager') and hasattr(loader.db_manager, 'client'):
@@ -82,11 +91,7 @@ class TestProductLoader:
     
     def test_initialization(self, temp_db_path):
         """Test ProductLoader initialization"""
-        config = Config()
-        normalizer = TextNormalizer()
-        embedder = EmbeddingGenerator(config.model.name, config.model.device)
-        
-        loader = ProductLoader(temp_db_path, normalizer, embedder)
+        loader = ProductLoader(temp_db_path, DummyNormalizer(), DummyEmbedder())
         
         try:
             assert loader.batch_size == 100
@@ -101,12 +106,8 @@ class TestProductLoader:
     
     def test_initialization_invalid_batch_size(self, temp_db_path):
         """Test ProductLoader initialization with invalid batch size"""
-        config = Config()
-        normalizer = TextNormalizer()
-        embedder = EmbeddingGenerator(config.model.name, config.model.device)
-        
         with pytest.raises(ValueError, match="batch_size must be positive"):
-            ProductLoader(temp_db_path, normalizer, embedder, batch_size=0)
+            ProductLoader(temp_db_path, DummyNormalizer(), DummyEmbedder(), batch_size=0)
     
     def test_load_from_excel_basic(self, product_loader, sample_excel_file):
         """Test basic Excel loading functionality"""
@@ -114,6 +115,18 @@ class TestProductLoader:
         
         assert count == 3
         assert product_loader.get_record_count() == 3
+
+        results = product_loader.db_manager.collection.get(include=["metadatas"])
+        metadatas_by_id = dict(zip(results["ids"], results["metadatas"]))
+
+        assert set(results["ids"]) == {
+            "product:0901110000:test_source:2",
+            "product:0901110000:test_source:3",
+            "product:0902000000:test_source:4",
+        }
+        assert metadatas_by_id["product:0901110000:test_source:2"]["source_id"] == "декларация_001"
+        assert metadatas_by_id["product:0901110000:test_source:3"]["source_id"] == "декларация_002"
+        assert metadatas_by_id["product:0901110000:test_source:2"]["excel_row_number"] == 2
     
     def test_load_from_excel_missing_file(self, product_loader):
         """Test loading from non-existent file"""
@@ -143,11 +156,62 @@ class TestProductLoader:
         
         assert count == 3
         
-        # Verify records were stored with unique IDs
-        # The first record with code 0901110000 should use the code as ID
-        # The second record with same code should get a unique ID like 0901110000_001
-        record_count = product_loader.get_record_count()
-        assert record_count == 3
+        results = product_loader.db_manager.collection.get(include=["metadatas"])
+        assert len(set(results["ids"])) == 3
+        assert "product:0901110000:test_source:2" in results["ids"]
+        assert "product:0901110000:test_source:3" in results["ids"]
+
+    def test_duplicate_source_requires_replace_existing(self, product_loader, sample_excel_file):
+        """Test repeated source_name loads require explicit replacement."""
+        product_loader.load_from_excel(sample_excel_file, "test_source")
+
+        with pytest.raises(SourceAlreadyExistsError, match="already has 3 records"):
+            product_loader.load_from_excel(sample_excel_file, "test_source")
+
+        assert product_loader.get_record_count() == 3
+
+    def test_replace_existing_replaces_only_same_product_source(self, product_loader, sample_excel_file):
+        """Test replacement deletes only product records for the selected source."""
+        product_loader.load_from_excel(sample_excel_file, "test_source")
+        product_loader.load_from_excel(sample_excel_file, "other_source")
+        product_loader.db_manager.add_batch(
+            ids=["0901110000"],
+            embeddings=[[0.0, 1.0, 0.0]],
+            metadatas=[{"description": "Reference coffee", "code": "0901110000"}],
+            documents=["reference coffee"],
+            source_type="reference"
+        )
+
+        replacement_file = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as temp_file_obj:
+                replacement_file = temp_file_obj.name
+                pd.DataFrame({
+                    "Code": ["0903000000"],
+                    "TextEx": ["Мате"],
+                    "SourceID": ["декларация_new"]
+                }).to_excel(replacement_file, index=False)
+
+            count = product_loader.load_from_excel(
+                replacement_file,
+                "test_source",
+                replace_existing=True
+            )
+
+            assert count == 1
+            assert product_loader.count_product_records_by_source("test_source") == 1
+            assert product_loader.count_product_records_by_source("other_source") == 3
+            assert product_loader.get_statistics_by_source_type()["reference"] == 1
+            assert product_loader.get_record_count() == 5
+        finally:
+            if replacement_file:
+                Path(replacement_file).unlink(missing_ok=True)
+
+    def test_product_id_supports_more_than_9999_rows(self, product_loader):
+        """Test product ID generation has no 9999 suffix limit."""
+        product_id = product_loader._generate_product_id("9505900000", "2026m3", 10001)
+
+        assert product_id == "product:9505900000:2026m3:10001"
 
 
 def test_excel_format_compatibility():
@@ -175,10 +239,7 @@ def test_excel_format_compatibility():
         # Create temp db directory
         temp_db = tempfile.mkdtemp()
         
-        config = Config()
-        normalizer = TextNormalizer()
-        embedder = EmbeddingGenerator(config.model.name, config.model.device)
-        loader = ProductLoader(temp_db, normalizer, embedder)
+        loader = ProductLoader(temp_db, DummyNormalizer(), DummyEmbedder())
         
         # Should load successfully with same format
         count = loader.load_from_excel(temp_file, "test_source")

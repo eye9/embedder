@@ -2,6 +2,10 @@
 
 Система для автоматического подбора кодов ТНВЭД (Товарная номенклатура внешнеэкономической деятельности) на основе текстового описания товара с использованием векторного поиска.
 
+## Документация по работе
+[Quick Cli](QUICK_CLI_GUIDE.md)
+[Load Description](CLI_BATCH_PROCESSING.md)
+
 ## Новые возможности: Поддержка товарных данных
 
 Система теперь поддерживает загрузку и поиск по товарам с уже подобранными кодами ТНВЭД из различных источников:
@@ -112,6 +116,16 @@ Code        | TextEx                           | SourceID
 - **Таможенные декларации**: `customs_2024_q1`, `customs_declarations_moscow`
 - **Каталоги поставщиков**: `supplier_abc_catalog`, `distributor_xyz_products`
 - **Внутренние справочники**: `company_product_base`, `erp_system_export`
+
+`source_name` считается именем набора данных. Повторная загрузка того же `source_name`
+заменяет старые product-записи только после явного подтверждения.
+
+Product-записи в ChromaDB получают технический ID:
+```text
+product:{code}:{source_name}:{excel_row_number}
+```
+Например: `product:0901110000:customs_2024_q1:2`. Код ТНВЭД хранится в
+metadata как `code`; бизнес-логика и поиск не должны извлекать код из ID.
 
 **Пример файла:** См. `example_product_data.csv` для примера формата данных.
 
@@ -226,7 +240,14 @@ python load_tnved.py tnved_full10_new.xlsx --source-type reference
 ```bash
 python load_tnved.py products.xlsx --source-type product --source-name "customs_2024_q1"
 python load_tnved.py supplier_catalog.xlsx --source-type product --source-name "supplier_abc"
+
+# Повторная загрузка уже существующего source_name без интерактивного вопроса
+python load_tnved.py products.xlsx --source-type product --source-name "customs_2024_q1" --replace-source
 ```
+
+Если `source_name` уже есть в базе, CLI покажет количество существующих product-записей
+и спросит подтверждение на замену. В режиме `--quiet` вопрос не задается: для замены
+нужно явно указать `--replace-source`.
 
 **⚠️ Важно:** Если у вас есть существующая база данных, созданная до обновления с поддержкой префиксов, рекомендуется переиндексировать данные для улучшения качества поиска:
 ```bash
@@ -259,6 +280,7 @@ python load_tnved.py tnved_full10_new.xlsx --verbose
 **Доступные опции:**
 - `--source-type` - тип данных: reference (справочные) или product (товарные) (по умолчанию: reference)
 - `--source-name` - имя источника данных (обязательно для --source-type product)
+- `--replace-source` - заменить существующие product-записи с тем же --source-name без интерактивного подтверждения
 - `--config` - путь к файлу конфигурации YAML
 - `--db-path` - путь к директории ChromaDB (по умолчанию: ./chroma_db)
 - `--collection-name` - имя коллекции ChromaDB (по умолчанию: tnved)
@@ -521,6 +543,13 @@ total_loaded = product_loader.load_from_excel(
 )
 print(f"Загружено {total_loaded} товарных записей")
 
+# Повторная загрузка того же source_name требует явного разрешения
+total_loaded = product_loader.load_from_excel(
+    "products.xlsx",
+    source_name="customs_2024_q1",
+    replace_existing=True
+)
+
 # Получение статистики по типам источников
 stats = product_loader.get_statistics_by_source_type()
 print(f"Справочные записи: {stats['reference']}")
@@ -598,6 +627,12 @@ python load_tnved.py customs_declarations.xlsx \
     --source-type product \
     --source-name "customs_2024_q1"
 
+# Повторная загрузка того же source_name с заменой старого набора
+python load_tnved.py customs_declarations.xlsx \
+    --source-type product \
+    --source-name "customs_2024_q1" \
+    --replace-source
+
 # Загрузка каталога поставщика
 python load_tnved.py supplier_catalog.xlsx \
     --source-type product \
@@ -653,6 +688,9 @@ embedder = EmbeddingGenerator("ai-forever/FRIDA", "cpu")
 # Загрузка товарных данных
 loader = ProductLoader("./chroma_db", normalizer, embedder)
 loader.load_from_excel("products.xlsx", "my_source")
+
+# Если source_name уже существует, используйте явную замену
+loader.load_from_excel("products.xlsx", "my_source", replace_existing=True)
 
 # Поиск с приоритизацией
 searcher = EnhancedSearcher("./chroma_db", normalizer, embedder)
