@@ -50,6 +50,24 @@ def test_add_batch(chroma_manager):
     assert chroma_manager.count() == 2
 
 
+def test_add_batch_respects_configured_upsert_chunk_size(temp_db_path, monkeypatch):
+    """Test large loader batches are split into smaller Chroma upsert calls."""
+    monkeypatch.setenv("TNVED_CHROMA_UPSERT_BATCH_SIZE", "1")
+    manager = ChromaDBManager(db_path=temp_db_path, collection_name="test_chunked_upsert")
+
+    manager.add_batch(
+        ids=["0901110000", "0901120000"],
+        embeddings=[[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]],
+        metadatas=[
+            {"description": "Coffee beans"},
+            {"description": "Tea leaves"},
+        ],
+        documents=["coffee beans", "tea leaves"],
+    )
+
+    assert manager.count() == 2
+
+
 def test_add_batch_upsert(chroma_manager):
     """Test that adding duplicate IDs updates existing records"""
     ids = ["0901110000"]

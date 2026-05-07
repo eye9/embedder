@@ -3,6 +3,8 @@ ChromaDB Manager for ТНВЭД Embedder System
 """
 
 import logging
+import os
+from pathlib import Path
 from typing import List, Dict, Optional
 import chromadb
 from chromadb.config import Settings
@@ -11,6 +13,9 @@ from models.search_result import SearchResult
 
 
 logger = logging.getLogger(__name__)
+
+
+DEFAULT_UPSERT_BATCH_SIZE = 100
 
 
 class ChromaDBManager:
@@ -31,8 +36,10 @@ class ChromaDBManager:
         """
         self.db_path = db_path
         self.collection_name = collection_name
+        self.upsert_batch_size = self._get_upsert_batch_size()
         
         logger.info(f"Initializing ChromaDB at {db_path}")
+        self._raise_if_open_by_another_process(db_path)
         
         # Initialize persistent client
         self.client = chromadb.PersistentClient(
@@ -50,6 +57,96 @@ class ChromaDBManager:
         )
         
         logger.info(f"Collection '{collection_name}' initialized with {self.collection.count()} records")
+
+    @staticmethod
+    def _get_upsert_batch_size() -> int:
+        """
+        Get the maximum number of records to send to ChromaDB in one upsert call.
+
+        Large external upserts can crash Chroma's native HNSW layer on Windows,
+        especially after deleting many records from a persisted collection.
+        """
+        configured_value = os.getenv("TNVED_CHROMA_UPSERT_BATCH_SIZE")
+        if not configured_value:
+            return DEFAULT_UPSERT_BATCH_SIZE
+
+        try:
+            batch_size = int(configured_value)
+        except ValueError:
+            logger.warning(
+                "Invalid TNVED_CHROMA_UPSERT_BATCH_SIZE=%r; using %s",
+                configured_value,
+                DEFAULT_UPSERT_BATCH_SIZE
+            )
+            return DEFAULT_UPSERT_BATCH_SIZE
+
+        if batch_size <= 0:
+            logger.warning(
+                "TNVED_CHROMA_UPSERT_BATCH_SIZE must be positive; using %s",
+                DEFAULT_UPSERT_BATCH_SIZE
+            )
+            return DEFAULT_UPSERT_BATCH_SIZE
+
+        return batch_size
+
+    @staticmethod
+    def _raise_if_open_by_another_process(db_path: str) -> None:
+        """
+        Fail before opening ChromaDB if another process has files under db_path open.
+
+        ChromaDB PersistentClient is embedded storage. On Windows, opening the
+        same persisted database from multiple Python processes can terminate the
+        interpreter with an access violation before normal exception handling runs.
+        """
+        if os.getenv("TNVED_SKIP_CHROMA_PROCESS_CHECK") == "1":
+            return
+
+        try:
+            import psutil
+        except ImportError:
+            logger.debug("psutil is unavailable; skipping ChromaDB process check")
+            return
+
+        db_path_obj = Path(db_path).resolve()
+        if not db_path_obj.exists():
+            return
+
+        current_pid = os.getpid()
+        db_path_text = str(db_path_obj).casefold()
+        users = []
+
+        for process in psutil.process_iter(["pid", "name", "cmdline"]):
+            if process.info.get("pid") == current_pid:
+                continue
+
+            try:
+                open_files = process.open_files()
+            except (psutil.AccessDenied, psutil.NoSuchProcess, psutil.ZombieProcess):
+                continue
+
+            for open_file in open_files:
+                open_path = str(Path(open_file.path).resolve()).casefold()
+                if open_path == db_path_text or open_path.startswith(db_path_text + os.sep):
+                    users.append(process)
+                    break
+
+        if not users:
+            return
+
+        formatted_users = []
+        for process in users[:5]:
+            info = process.info
+            cmdline = info.get("cmdline") or []
+            command = " ".join(cmdline) if cmdline else (info.get("name") or "unknown")
+            formatted_users.append(f"PID {info.get('pid')}: {command}")
+
+        more = "" if len(users) <= 5 else f"; and {len(users) - 5} more"
+        raise RuntimeError(
+            "ChromaDB database path is already open by another process. "
+            "Stop other search/API/loader processes before opening this database: "
+            + "; ".join(formatted_users)
+            + more
+        )
     
     def add_batch(
         self,
@@ -102,13 +199,29 @@ class ChromaDBManager:
             
             enhanced_metadatas.append(enhanced_metadata)
         
-        # ChromaDB's add method performs upsert by default
-        self.collection.upsert(
-            ids=ids,
-            embeddings=embeddings,
-            metadatas=enhanced_metadatas,
-            documents=documents
-        )
+        total_records = len(ids)
+        total_chunks = (total_records + self.upsert_batch_size - 1) // self.upsert_batch_size
+
+        if total_chunks > 1:
+            logger.info(
+                f"Adding {total_records} records to ChromaDB in {total_chunks} "
+                f"chunks of up to {self.upsert_batch_size}"
+            )
+
+        for chunk_num, start_idx in enumerate(range(0, total_records, self.upsert_batch_size), start=1):
+            end_idx = min(start_idx + self.upsert_batch_size, total_records)
+            logger.debug(
+                f"Upserting ChromaDB chunk {chunk_num}/{total_chunks} "
+                f"({end_idx - start_idx} records)"
+            )
+
+            # ChromaDB's upsert method updates existing records with the same ID.
+            self.collection.upsert(
+                ids=ids[start_idx:end_idx],
+                embeddings=embeddings[start_idx:end_idx],
+                metadatas=enhanced_metadatas[start_idx:end_idx],
+                documents=documents[start_idx:end_idx]
+            )
         
         logger.info(f"Successfully added/updated {len(ids)} records with source_type: {source_type}")
 
